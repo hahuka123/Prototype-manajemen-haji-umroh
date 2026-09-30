@@ -1,40 +1,36 @@
-// src/services/documentService.js
-
+import { supabase } from './supabase';
 import { jamaahService } from './jamaahService';
 
 const REQUIRED_DOCUMENTS = ['ktp', 'kk', 'passport', 'foto', 'buku-nikah', 'kesehatan'];
 
-// Initial mock data
-// Key: jamaah_id
-let mockDocuments = {
-  1: [
-    { id: 101, jamaah_id: 1, tipe: 'ktp', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' },
-    { id: 102, jamaah_id: 1, tipe: 'kk', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' },
-    { id: 103, jamaah_id: 1, tipe: 'passport', status: 'Menunggu Verifikasi', catatan: '', updated_at: new Date().toISOString(), url: '#' }
-    // others are Belum Ada
-  ],
-  2: [
-    { id: 201, jamaah_id: 2, tipe: 'ktp', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' },
-    { id: 202, jamaah_id: 2, tipe: 'kk', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' },
-    { id: 203, jamaah_id: 2, tipe: 'passport', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' },
-    { id: 204, jamaah_id: 2, tipe: 'foto', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' },
-    { id: 205, jamaah_id: 2, tipe: 'buku-nikah', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' },
-    { id: 206, jamaah_id: 2, tipe: 'kesehatan', status: 'Lengkap', catatan: '', updated_at: new Date().toISOString(), url: '#' }
-  ]
-};
-
 export const documentService = {
   // Get all documents for a jamaah
   getDocumentsByJamaah: async (jamaahId) => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    const docs = mockDocuments[jamaahId] || [];
+    const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('jamaah_id', jamaahId);
+        
+    if (error) throw error;
     
-    // Fill missing docs with 'Belum Ada'
+    const docs = data || [];
+    
+    // Fill missing docs with 'Belum Ada' for the UI
     const fullDocs = REQUIRED_DOCUMENTS.map(tipe => {
-      const existing = docs.find(d => d.tipe === tipe);
-      if (existing) return existing;
+      const existing = docs.find(d => d.document_type === tipe);
+      if (existing) {
+          return {
+              id: existing.id,
+              jamaah_id: existing.jamaah_id,
+              tipe: existing.document_type,
+              status: existing.status,
+              catatan: existing.notes || '',
+              url: existing.file_path,
+              updated_at: existing.updated_at
+          };
+      }
       return {
-        id: Math.random(),
+        id: `mock-${Math.random()}`,
         jamaah_id: jamaahId,
         tipe: tipe,
         status: 'Belum Ada',
@@ -48,72 +44,137 @@ export const documentService = {
 
   // Upload a document (Jamaah)
   uploadDocument: async (jamaahId, tipe, file) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    if (!mockDocuments[jamaahId]) {
-      mockDocuments[jamaahId] = [];
-    }
-    
-    let docs = mockDocuments[jamaahId];
-    let docIndex = docs.findIndex(d => d.tipe === tipe);
-    
-    const newDoc = {
-      id: Math.random(),
-      jamaah_id: jamaahId,
-      tipe: tipe,
-      status: 'Menunggu Verifikasi',
-      catatan: '',
-      url: URL.createObjectURL(file), // Mock URL
-      updated_at: new Date().toISOString()
-    };
+    // 1. Upload to Storage
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${jamaahId}_${tipe}_${Date.now()}.${fileExt}`;
+    const filePath = `${jamaahId}/${fileName}`;
 
-    if (docIndex >= 0) {
-      docs[docIndex] = newDoc;
+    const { error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+        .from('documents')
+        .getPublicUrl(filePath);
+        
+    const fileUrl = urlData.publicUrl;
+
+    // 2. Upsert record in database
+    const { data: existing } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('jamaah_id', jamaahId)
+        .eq('document_type', tipe)
+        .single();
+        
+    let dbResponse;
+
+    if (existing) {
+        dbResponse = await supabase
+            .from('documents')
+            .update({
+                file_path: fileUrl,
+                status: 'Menunggu Verifikasi',
+                notes: ''
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
     } else {
-      docs.push(newDoc);
+        dbResponse = await supabase
+            .from('documents')
+            .insert([{
+                jamaah_id: jamaahId,
+                document_type: tipe,
+                file_path: fileUrl,
+                status: 'Menunggu Verifikasi',
+                notes: ''
+            }])
+            .select()
+            .single();
     }
     
-    return newDoc;
+    if (dbResponse.error) throw dbResponse.error;
+    
+    const newDoc = dbResponse.data;
+    
+    return {
+      id: newDoc.id,
+      jamaah_id: newDoc.jamaah_id,
+      tipe: newDoc.document_type,
+      status: newDoc.status,
+      catatan: newDoc.notes || '',
+      url: newDoc.file_path,
+      updated_at: newDoc.updated_at
+    };
   },
 
   // Verify document (Admin)
   verifyDocument: async (jamaahId, tipe, status, catatan = '') => {
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const { data: existing } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('jamaah_id', jamaahId)
+        .eq('document_type', tipe)
+        .single();
+        
+    if (!existing) throw new Error('Document not found');
     
-    if (!mockDocuments[jamaahId]) return null;
+    const { data, error } = await supabase
+        .from('documents')
+        .update({
+            status: status,
+            notes: catatan,
+            verified_at: status === 'Lengkap' ? new Date().toISOString() : null
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+        
+    if (error) throw error;
     
-    let docs = mockDocuments[jamaahId];
-    let doc = docs.find(d => d.tipe === tipe);
+    // Note: No need to call updateDokumenPersentase manually anymore,
+    // the PostgreSQL view v_jamaah_billing_summary handles the calculation automatically!
     
-    if (doc) {
-      doc.status = status;
-      doc.catatan = catatan;
-      doc.updated_at = new Date().toISOString();
-      
-      // Calculate percentage and update jamaah
-      const fullDocs = await documentService.getDocumentsByJamaah(jamaahId);
-      const lengkapCount = fullDocs.filter(d => d.status === 'Lengkap').length;
-      const persentase = Math.round((lengkapCount / REQUIRED_DOCUMENTS.length) * 100);
-      
-      await jamaahService.updateDokumenPersentase(jamaahId, persentase);
-      
-      return doc;
-    }
-    
-    throw new Error('Document not found');
+    return {
+      id: data.id,
+      jamaah_id: data.jamaah_id,
+      tipe: data.document_type,
+      status: data.status,
+      catatan: data.notes || '',
+      url: data.file_path,
+      updated_at: data.updated_at
+    };
   },
   
   // Get all documents waiting for verification (Admin)
   getPendingVerifications: async () => {
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const { data, error } = await supabase
+        .from('documents')
+        .select(`
+            *,
+            jamaah (
+                profile_id,
+                profiles:profile_id ( full_name )
+            )
+        `)
+        .eq('status', 'Menunggu Verifikasi')
+        .order('updated_at', { ascending: false });
+        
+    if (error) throw error;
     
-    let pending = [];
-    for (const jamaahId in mockDocuments) {
-      const docs = mockDocuments[jamaahId].filter(d => d.status === 'Menunggu Verifikasi');
-      if (docs.length > 0) {
-        pending = pending.concat(docs);
-      }
-    }
-    return pending;
+    return data.map(d => ({
+        id: d.id,
+        jamaah_id: d.jamaah_id,
+        tipe: d.document_type,
+        status: d.status,
+        catatan: d.notes || '',
+        url: d.file_path,
+        updated_at: d.updated_at,
+        jamaah_name: d.jamaah?.profiles?.full_name || 'Jamaah'
+    }));
   }
 };

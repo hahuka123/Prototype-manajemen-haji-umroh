@@ -1,110 +1,98 @@
-// src/services/jamaahService.js
-
-// Mock data for Jamaah
-let mockJamaah = [
-  {
-    id: 1,
-    nik: '3201010101010001',
-    nama_lengkap: 'Budi Santoso',
-    jenis_kelamin: 'L',
-    no_telepon: '081234567890',
-    alamat: 'Jl. Merdeka No. 1, Jakarta',
-    paket_id: 1, // Umroh Reguler 9 Hari
-    jadwal_id: 1,
-    status_pembayaran: 'Belum Lunas',
-    total_terbayar: 10000000,
-    sisa_tagihan: 20000000,
-    dokumen_persentase: 33, // Example
-    status_keberangkatan: 'Dokumen Diproses',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 2,
-    nik: '3201010101010002',
-    nama_lengkap: 'Siti Aminah',
-    jenis_kelamin: 'P',
-    no_telepon: '081298765432',
-    alamat: 'Jl. Sudirman No. 2, Bandung',
-    paket_id: 2, // Haji Plus
-    jadwal_id: 2,
-    status_pembayaran: 'Lunas',
-    total_terbayar: 250000000,
-    sisa_tagihan: 0,
-    dokumen_persentase: 100,
-    status_keberangkatan: 'Siap Berangkat',
-    created_at: new Date().toISOString()
-  }
-];
-
-// In-memory cache for demo mode
-let jamaahData = [...mockJamaah];
+import { supabase } from './supabase';
 
 export const jamaahService = {
-  // Get all jamaah
+  // Get all jamaah (menggunakan view yang dibuat di SQL agar dapat field kalkulasi)
   getJamaah: async () => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return [...jamaahData];
+    const { data, error } = await supabase
+        .from('v_jamaah_billing_summary')
+        .select('*');
+    if (error) throw error;
+    
+    // Map data from view to match our UI properties
+    return data.map(j => ({
+        id: j.jamaah_id,
+        profile_id: j.profile_id,
+        nik: j.nik,
+        nama_lengkap: j.full_name,
+        no_telepon: j.phone,
+        paket_id: j.package_id,
+        status_pembayaran: j.status_pelunasan,
+        total_terbayar: j.total_terbayar,
+        sisa_tagihan: j.sisa_tagihan,
+        dokumen_persentase: j.persentase_dokumen,
+        // Status keberangkatan kita default dari tabel jamaah, karena view ini fokus billing
+        status_keberangkatan: j.persentase_dokumen === 100 && j.sisa_tagihan === 0 ? 'Siap Berangkat' : (j.persentase_dokumen > 0 ? 'Dokumen Diproses' : 'Pendaftaran')
+    }));
   },
 
   // Get jamaah by ID
   getJamaahById: async (id) => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    const jamaah = jamaahData.find(j => j.id === parseInt(id));
-    if (!jamaah) throw new Error('Jamaah not found');
-    return { ...jamaah };
+    const { data, error } = await supabase
+        .from('v_jamaah_billing_summary')
+        .select('*')
+        .eq('jamaah_id', id)
+        .single();
+    if (error) throw error;
+
+    return {
+        id: data.jamaah_id,
+        profile_id: data.profile_id,
+        nik: data.nik,
+        nama_lengkap: data.full_name,
+        no_telepon: data.phone,
+        paket_id: data.package_id,
+        status_pembayaran: data.status_pelunasan,
+        total_terbayar: data.total_terbayar,
+        sisa_tagihan: data.sisa_tagihan,
+        dokumen_persentase: data.persentase_dokumen,
+        status_keberangkatan: data.persentase_dokumen === 100 && data.sisa_tagihan === 0 ? 'Siap Berangkat' : (data.persentase_dokumen > 0 ? 'Dokumen Diproses' : 'Pendaftaran')
+    };
   },
 
   // Add new jamaah
-  addJamaah: async (data) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const newId = Math.max(...jamaahData.map(j => j.id), 0) + 1;
-    const newJamaah = {
-      ...data,
-      id: newId,
-      created_at: new Date().toISOString(),
-      dokumen_persentase: 0,
-      status_pembayaran: 'Belum Lunas',
-      total_terbayar: 0,
-      status_keberangkatan: 'Pendaftaran'
-    };
-    jamaahData.push(newJamaah);
-    return newJamaah;
+  addJamaah: async (payload) => {
+    // 1. Simpan ke tabel profiles jika perlu, lalu insert ke tabel jamaah
+    const { data, error } = await supabase
+        .from('jamaah')
+        .insert([{
+            nik: payload.nik,
+            gender: payload.jenis_kelamin,
+            phone: payload.no_telepon,
+            address: payload.alamat,
+            package_id: payload.paket_id,
+            birth_date: '1990-01-01', // Harusnya dinamis
+        }])
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
   },
 
   // Update jamaah
-  updateJamaah: async (id, data) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const index = jamaahData.findIndex(j => j.id === parseInt(id));
-    if (index === -1) throw new Error('Jamaah not found');
-    
-    jamaahData[index] = { ...jamaahData[index], ...data };
-    return { ...jamaahData[index] };
+  updateJamaah: async (id, payload) => {
+    const { data, error } = await supabase
+        .from('jamaah')
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
   },
 
   // Delete jamaah
   deleteJamaah: async (id) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const index = jamaahData.findIndex(j => j.id === parseInt(id));
-    if (index === -1) throw new Error('Jamaah not found');
-    
-    jamaahData.splice(index, 1);
+    const { error } = await supabase
+        .from('jamaah')
+        .delete()
+        .eq('id', id);
+    if (error) throw error;
     return true;
   },
   
-  // Calculate persentase & update status (to be called when doc status changes)
+  // Note: updateDokumenPersentase is not strictly needed as a DB write anymore 
+  // since the view `v_jamaah_billing_summary` dynamically calculates it in SQL.
   updateDokumenPersentase: async (id, percent) => {
-    const jamaah = jamaahData.find(j => j.id === parseInt(id));
-    if (jamaah) {
-        jamaah.dokumen_persentase = percent;
-        // Simple state machine logic
-        if (percent === 100 && jamaah.sisa_tagihan === 0) {
-            jamaah.status_keberangkatan = 'Siap Berangkat';
-        } else if (percent > 0) {
-            jamaah.status_keberangkatan = 'Dokumen Diproses';
-        } else {
-            jamaah.status_keberangkatan = 'Pendaftaran';
-        }
-    }
+      // In a real Supabase DB with views, you just fetch the view again.
   }
 };

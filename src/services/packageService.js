@@ -1,154 +1,100 @@
-import { supabase, isConfigured } from './supabase';
-
-const STORAGE_KEY = 'haji_umroh_packages';
-
-const INITIAL_PACKAGES = [
-  {
-    id: 'pkg-1',
-    name: 'Umrah Reguler Awal Tahun 2027',
-    type: 'Umrah Reguler',
-    price: 35000000,
-    departure_date: '2027-01-10',
-    return_date: '2027-01-21',
-    duration: 12,
-    description: 'Penerbangan direct Saudia Airlines Jakarta - Madinah, hotel bintang 4 dekat pelataran masjid.'
-  },
-  {
-    id: 'pkg-2',
-    name: 'Umrah Ramadhan Lailatul Qadar 2027',
-    type: 'Umrah VIP',
-    price: 52000000,
-    departure_date: '2027-03-25',
-    return_date: '2027-04-10',
-    duration: 17,
-    description: 'Paket Umrah 10 malam terakhir Ramadhan dengan hotel bintang 5 langsung menghadap Ka\'bah.'
-  },
-  {
-    id: 'pkg-3',
-    name: 'Haji Khusus / Plus VIP 2027',
-    type: 'Haji Plus',
-    price: 165000000,
-    departure_date: '2027-05-20',
-    return_date: '2027-06-15',
-    duration: 27,
-    description: 'Maktab VIP zona 1 Mina & Arafah, tenda ber-AC eksklusif, hotel bintang 5 pelataran Masjidil Haram.'
-  }
-];
-
-function getLocalPackages() {
-  const data = localStorage.getItem(STORAGE_KEY);
-  if (!data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_PACKAGES));
-    return INITIAL_PACKAGES;
-  }
-  try {
-    return JSON.parse(data);
-  } catch (e) {
-    return INITIAL_PACKAGES;
-  }
-}
-
-function saveLocalPackages(packages) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(packages));
-}
+import { supabase } from './supabase';
 
 export const packageService = {
   async getAll() {
-    if (isConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from('packages')
-          .select('*')
-          .order('departure_date', { ascending: true });
-        if (!error && data && data.length > 0) return data;
-      } catch (e) {
-        console.warn('Gagal load paket dari Supabase, menggunakan lokal:', e);
-      }
-    }
-    return getLocalPackages();
+    const { data, error } = await supabase
+      .from('packages')
+      .select('*')
+      .order('departure_date', { ascending: true });
+      
+    if (error) throw error;
+    
+    // Map DB fields to UI fields if needed
+    return data.map(p => ({
+        id: p.id,
+        nama: p.name,
+        tipe: p.type,
+        harga: p.price,
+        tanggal_keberangkatan: p.departure_date,
+        tanggal_kepulangan: p.return_date,
+        durasi_hari: p.duration,
+        deskripsi: p.description
+    }));
+  },
+
+  async getPackages() {
+      // Alias for getAll, mapping to match UI
+      return this.getAll();
   },
 
   async getById(id) {
-    if (isConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from('packages')
-          .select('*')
-          .eq('id', id)
-          .single();
-        if (!error && data) return data;
-      } catch (e) {
-        console.warn('Gagal ambil detail paket:', e);
-      }
-    }
-    const all = getLocalPackages();
-    return all.find(p => p.id === id) || null;
+    const { data, error } = await supabase
+      .from('packages')
+      .select('*')
+      .eq('id', id)
+      .single();
+      
+    if (error) throw error;
+    
+    return {
+        id: data.id,
+        nama: data.name,
+        tipe: data.type,
+        harga: data.price,
+        tanggal_keberangkatan: data.departure_date,
+        tanggal_kepulangan: data.return_date,
+        durasi_hari: data.duration,
+        deskripsi: data.description
+    };
   },
 
   async create(payload) {
-    if (isConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from('packages')
-          .insert([payload])
-          .select()
-          .single();
-        if (!error && data) return data;
-        if (error) throw error;
-      } catch (e) {
-        console.warn('Fallback save lokal paket:', e);
-      }
-    }
-    const all = getLocalPackages();
-    const newPkg = {
-      ...payload,
-      id: `pkg-${Date.now()}`
-    };
-    all.push(newPkg);
-    saveLocalPackages(all);
-    return newPkg;
+    const { data, error } = await supabase
+      .from('packages')
+      .insert([{
+          name: payload.nama,
+          type: payload.tipe,
+          price: payload.harga,
+          departure_date: payload.tanggal_keberangkatan,
+          return_date: payload.tanggal_kepulangan,
+          duration: payload.durasi_hari,
+          description: payload.deskripsi
+      }])
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
   },
 
   async update(id, payload) {
-    if (isConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from('packages')
-          .update(payload)
-          .eq('id', id)
-          .select()
-          .single();
-        if (!error && data) return data;
-        if (error) throw error;
-      } catch (e) {
-        console.warn('Fallback update lokal paket:', e);
-      }
-    }
-    const all = getLocalPackages();
-    const idx = all.findIndex(p => p.id === id);
-    if (idx !== -1) {
-      all[idx] = { ...all[idx], ...payload };
-      saveLocalPackages(all);
-      return all[idx];
-    }
-    return null;
+    const updateData = {};
+    if (payload.nama) updateData.name = payload.nama;
+    if (payload.tipe) updateData.type = payload.tipe;
+    if (payload.harga) updateData.price = payload.harga;
+    if (payload.tanggal_keberangkatan) updateData.departure_date = payload.tanggal_keberangkatan;
+    if (payload.tanggal_kepulangan) updateData.return_date = payload.tanggal_kepulangan;
+    if (payload.durasi_hari) updateData.duration = payload.durasi_hari;
+    if (payload.deskripsi) updateData.description = payload.deskripsi;
+
+    const { data, error } = await supabase
+      .from('packages')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
   },
 
   async delete(id) {
-    if (isConfigured) {
-      try {
-        const { error } = await supabase
-          .from('packages')
-          .delete()
-          .eq('id', id);
-        if (error) throw error;
-      } catch (e) {
-        console.warn('Fallback delete lokal paket:', e);
-      }
-    }
-    const all = getLocalPackages();
-    const filtered = all.filter(p => p.id !== id);
-    saveLocalPackages(filtered);
+    const { error } = await supabase
+      .from('packages')
+      .delete()
+      .eq('id', id);
+      
+    if (error) throw error;
     return true;
   }
 };

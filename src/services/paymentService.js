@@ -1,167 +1,154 @@
-// src/services/paymentService.js
-
+import { supabase } from './supabase';
 import { jamaahService } from './jamaahService';
-
-// Mock payments data
-// jamaahId -> array of payments
-let mockPayments = {
-  1: [
-    {
-      id: 1001,
-      jamaah_id: 1,
-      metode: 'transfer',
-      jenis: 'cicilan',
-      nominal: 10000000,
-      bank_asal: 'BCA',
-      no_referensi: 'REF-BCA-001',
-      tanggal: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-      status: 'verified',
-      bukti_url: '#',
-      catatan_admin: ''
-    }
-  ],
-  2: [
-    {
-      id: 1002,
-      jamaah_id: 2,
-      metode: 'cash',
-      jenis: 'full',
-      nominal: 250000000,
-      bank_asal: '',
-      no_referensi: '',
-      tanggal: new Date(Date.now() - 172800000).toISOString(),
-      status: 'verified',
-      bukti_url: null,
-      catatan_admin: 'Penerimaan cash di kantor'
-    }
-  ]
-};
 
 export const paymentService = {
   getPaymentsByJamaah: async (jamaahId) => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return mockPayments[jamaahId] || [];
+    const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('jamaah_id', jamaahId)
+        .order('payment_date', { ascending: false });
+        
+    if (error) throw error;
+    
+    // Map db fields to UI fields
+    return data.map(p => ({
+        id: p.id,
+        jamaah_id: p.jamaah_id,
+        metode: p.payment_method,
+        jenis: p.payment_type,
+        nominal: p.amount,
+        bank_asal: p.bank_name,
+        no_referensi: p.reference_number,
+        tanggal: p.payment_date,
+        status: p.status,
+        bukti_url: p.proof_file_path,
+        catatan_admin: p.admin_notes || p.rejection_reason || ''
+    }));
   },
   
   getAllPayments: async () => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    let all = [];
-    for (const key in mockPayments) {
-      all = all.concat(mockPayments[key]);
-    }
-    // Sort descending by date
-    return all.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+    const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .order('payment_date', { ascending: false });
+        
+    if (error) throw error;
+    
+    return data.map(p => ({
+        id: p.id,
+        jamaah_id: p.jamaah_id,
+        metode: p.payment_method,
+        jenis: p.payment_type,
+        nominal: p.amount,
+        bank_asal: p.bank_name,
+        no_referensi: p.reference_number,
+        tanggal: p.payment_date,
+        status: p.status,
+        bukti_url: p.proof_file_path,
+        catatan_admin: p.admin_notes || p.rejection_reason || ''
+    }));
   },
   
   getPendingTransfers: async () => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    let pending = [];
-    for (const key in mockPayments) {
-      const p = mockPayments[key].filter(x => x.metode === 'transfer' && x.status === 'pending');
-      pending = pending.concat(p);
-    }
-    return pending.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+    const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('status', 'pending')
+        .eq('payment_method', 'transfer')
+        .order('payment_date', { ascending: false });
+        
+    if (error) throw error;
+    
+    return data.map(p => ({
+        id: p.id,
+        jamaah_id: p.jamaah_id,
+        metode: p.payment_method,
+        jenis: p.payment_type,
+        nominal: p.amount,
+        bank_asal: p.bank_name,
+        no_referensi: p.reference_number,
+        tanggal: p.payment_date,
+        status: p.status,
+        bukti_url: p.proof_file_path,
+        catatan_admin: p.admin_notes || p.rejection_reason || ''
+    }));
   },
 
   // Jamaah mengajukan transfer
-  submitTransfer: async (data) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Validation
-    const jamaah = await jamaahService.getJamaahById(data.jamaah_id);
-    if (data.nominal <= 0 || data.nominal > jamaah.sisa_tagihan) {
+  submitTransfer: async (payload) => {
+    const jamaah = await jamaahService.getJamaahById(payload.jamaah_id);
+    if (payload.nominal <= 0 || payload.nominal > jamaah.sisa_tagihan) {
         throw new Error(`Nominal tidak valid. Sisa tagihan Anda: Rp ${jamaah.sisa_tagihan.toLocaleString('id-ID')}`);
     }
 
-    const newPayment = {
-      ...data,
-      id: Math.floor(Math.random() * 100000),
-      metode: 'transfer',
-      tanggal: new Date().toISOString(),
-      status: 'pending',
-      catatan_admin: ''
-    };
-
-    if (!mockPayments[data.jamaah_id]) mockPayments[data.jamaah_id] = [];
-    mockPayments[data.jamaah_id].push(newPayment);
-    return newPayment;
+    const { data, error } = await supabase
+        .from('payments')
+        .insert([{
+            jamaah_id: payload.jamaah_id,
+            amount: payload.nominal,
+            payment_type: payload.jenis,
+            payment_method: 'transfer',
+            payment_date: payload.tanggal || new Date().toISOString().split('T')[0],
+            bank_name: payload.bank_asal,
+            reference_number: payload.no_referensi,
+            status: 'pending',
+            proof_file_path: payload.bukti_url
+        }])
+        .select()
+        .single();
+        
+    if (error) throw error;
+    return data;
   },
 
   // Admin mencatat cash
-  submitCash: async (data) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Validation
-    const jamaah = await jamaahService.getJamaahById(data.jamaah_id);
-    if (data.nominal <= 0 || data.nominal > jamaah.sisa_tagihan) {
+  submitCash: async (payload) => {
+    const jamaah = await jamaahService.getJamaahById(payload.jamaah_id);
+    if (payload.nominal <= 0 || payload.nominal > jamaah.sisa_tagihan) {
         throw new Error(`Nominal tidak valid. Sisa tagihan jamaah: Rp ${jamaah.sisa_tagihan.toLocaleString('id-ID')}`);
     }
 
-    const newPayment = {
-      ...data,
-      id: Math.floor(Math.random() * 100000),
-      metode: 'cash',
-      tanggal: new Date().toISOString(),
-      status: 'verified',
-      bukti_url: null
-    };
-
-    if (!mockPayments[data.jamaah_id]) mockPayments[data.jamaah_id] = [];
-    mockPayments[data.jamaah_id].push(newPayment);
+    const { data, error } = await supabase
+        .from('payments')
+        .insert([{
+            jamaah_id: payload.jamaah_id,
+            amount: payload.nominal,
+            payment_type: payload.jenis,
+            payment_method: 'cash',
+            payment_date: payload.tanggal || new Date().toISOString().split('T')[0],
+            status: 'verified',
+            admin_notes: payload.catatan
+        }])
+        .select()
+        .single();
+        
+    if (error) throw error;
     
-    // Automatically recalculate balances because status is verified
-    await paymentService.recalculateJamaahFinance(data.jamaah_id);
-    
-    return newPayment;
+    // Not needed to call recalculate explicitly if we rely on the SQL view to get the billing status!
+    // The view `v_jamaah_billing_summary` will automatically aggregate this new 'verified' payment.
+    return data;
   },
 
   // Admin verifikasi transfer
   verifyTransfer: async (paymentId, jamaahId, status, catatan) => {
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const updateData = { status: status };
+    if (status === 'rejected') updateData.rejection_reason = catatan;
+    if (status === 'verified') updateData.admin_notes = catatan;
     
-    const payments = mockPayments[jamaahId];
-    if (!payments) throw new Error('Jamaah tidak ditemukan');
-    
-    const payment = payments.find(p => p.id === paymentId);
-    if (!payment) throw new Error('Pembayaran tidak ditemukan');
-    
-    payment.status = status;
-    payment.catatan_admin = catatan;
-    
-    if (status === 'verified') {
-        await paymentService.recalculateJamaahFinance(jamaahId);
-    }
-    
-    return payment;
+    const { data, error } = await supabase
+        .from('payments')
+        .update(updateData)
+        .eq('id', paymentId)
+        .select()
+        .single();
+        
+    if (error) throw error;
+    return data;
   },
   
-  // Rekalkulasi Sisa Tagihan dan Status Pembayaran
+  // Note: recalculateJamaahFinance is no longer needed since we use a Database View!
   recalculateJamaahFinance: async (jamaahId) => {
-    const payments = mockPayments[jamaahId] || [];
-    const verifiedPayments = payments.filter(p => p.status === 'verified');
-    const totalTerbayarSah = verifiedPayments.reduce((sum, p) => sum + p.nominal, 0);
-    
-    const jamaah = await jamaahService.getJamaahById(jamaahId);
-    // Assuming Harga Paket is derived from initial sisa tagihan + total terbayar for demo simplicity
-    // Or we just calculate based on known total
-    const hargaPaket = jamaah.sisa_tagihan + jamaah.total_terbayar;
-    
-    const sisaTagihan = Math.max(0, hargaPaket - totalTerbayarSah);
-    let statusPembayaran = 'Belum Lunas';
-    
-    if (totalTerbayarSah === 0) {
-        statusPembayaran = 'Belum Bayar';
-    } else if (totalTerbayarSah > 0 && totalTerbayarSah < hargaPaket) {
-        statusPembayaran = 'Cicilan';
-    } else if (totalTerbayarSah >= hargaPaket) {
-        statusPembayaran = 'Lunas';
-    }
-    
-    // Update the Jamaah
-    await jamaahService.updateJamaah(jamaahId, {
-        total_terbayar: totalTerbayarSah,
-        sisa_tagihan: sisaTagihan,
-        status_pembayaran: statusPembayaran
-    });
+      // Logic has moved to PostgreSQL View `v_jamaah_billing_summary`
   }
 };
