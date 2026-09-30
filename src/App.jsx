@@ -12,6 +12,7 @@ import Login from './pages/Login';
 // Halaman Admin
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminJamaah from './pages/admin/Jamaah';
+import AdminDetailJamaah from './pages/admin/DetailJamaah';
 import AdminDokumen from './pages/admin/Dokumen';
 import AdminPembayaran from './pages/admin/Pembayaran';
 import AdminVerifikasiPembayaran from './pages/admin/VerifikasiPembayaran';
@@ -77,6 +78,7 @@ export default function App() {
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="jamaah" element={<AdminJamaah />} />
+            <Route path="jamaah/:id" element={<AdminDetailJamaah />} />
             <Route path="dokumen" element={<AdminDokumen />} />
             <Route path="pembayaran" element={<AdminPembayaran />} />
             <Route path="pembayaran/verifikasi" element={<AdminVerifikasiPembayaran />} />

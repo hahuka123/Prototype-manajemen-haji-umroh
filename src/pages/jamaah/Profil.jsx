@@ -1,21 +1,37 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { User, Phone, MapPin, CreditCard, ShieldCheck } from 'lucide-react';
+import { jamaahService } from '../../services/jamaahService';
+import { packageService } from '../../services/packageService';
 
 export default function JamaahProfil() {
   const { profile } = useAuth();
+  const [jamaah, setJamaah] = useState(null);
+  const [paket, setPaket] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const jamaahData = {
-    nama: profile?.full_name || 'Ahmad Fauzan',
-    nik: '3271020038840001',
-    paspor: 'B9872615',
-    tglLahir: '15 Maret 1988',
-    gender: 'Laki-laki',
-    alamat: 'Jl. Melati No. 45, Kebayoran Baru, Jakarta Selatan',
-    noHp: profile?.phone || '081234567890',
-    paket: 'Umrah Reguler 2027',
-    status: 'Belum Lunas'
-  };
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        // Default mapping demo user to jamaah ID 1
+        const j = await jamaahService.getJamaahById(1);
+        setJamaah(j);
+        if (j.paket_id) {
+            const pkgs = await packageService.getPackages();
+            setPaket(pkgs.find(p => p.id === j.paket_id));
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (!jamaah) return <div className="p-8 text-center">Data Jamaah tidak ditemukan.</div>;
 
   return (
     <div style={{ maxWidth: '750px', margin: '0 auto' }}>
@@ -42,10 +58,12 @@ export default function JamaahProfil() {
             <User size={32} />
           </div>
           <div>
-            <h2 style={{ fontSize: '1.35rem' }}>{jamaahData.nama}</h2>
+            <h2 style={{ fontSize: '1.35rem' }}>{jamaah.nama_lengkap}</h2>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
-              <span className="status-badge pending">{jamaahData.status}</span>
-              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>• Paket {jamaahData.paket}</span>
+              <span className={`status-badge ${jamaah.status_pembayaran === 'Lunas' ? 'verified' : 'pending'}`}>
+                  {jamaah.status_pembayaran}
+              </span>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>• Paket {paket ? paket.nama : '-'}</span>
             </div>
           </div>
         </div>
@@ -53,36 +71,26 @@ export default function JamaahProfil() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           <div>
             <span className="stat-label">Nomor Induk Kependudukan (NIK)</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaahData.nik}</div>
-          </div>
-          <div>
-            <span className="stat-label">Nomor Paspor</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaahData.paspor}</div>
-          </div>
-          <div>
-            <span className="stat-label">Tanggal Lahir</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaahData.tglLahir}</div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaah.nik}</div>
           </div>
           <div>
             <span className="stat-label">Jenis Kelamin</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaahData.gender}</div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaah.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'}</div>
           </div>
           <div>
             <span className="stat-label">Nomor Telepon / WhatsApp</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaahData.noHp}</div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaah.no_telepon}</div>
           </div>
           <div>
-            <span className="stat-label">Paket Ibadah</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px', color: 'var(--primary-700)' }}>
-              {jamaahData.paket}
-            </div>
+            <span className="stat-label">Status Keberangkatan</span>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaah.status_keberangkatan}</div>
           </div>
         </div>
 
         <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
           <span className="stat-label">Alamat Domisili</span>
           <div style={{ fontWeight: 500, fontSize: '0.92rem', marginTop: '4px', lineHeight: 1.5 }}>
-            {jamaahData.alamat}
+            {jamaah.alamat}
           </div>
         </div>
       </div>
