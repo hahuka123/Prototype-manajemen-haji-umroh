@@ -1,0 +1,45 @@
+# Rules & Guidelines: Prototipe Manajemen Haji & Umroh
+
+Proyek ini dibangun berdasarkan Product Requirements Document (PRD v2.0) untuk aplikasi manajemen administrasi biro perjalanan haji dan umroh.
+
+## 1. Tech Stack Mandate
+- **Frontend**: React + Vite (JavaScript / JSX).
+- **Styling**: Vanilla CSS murni dengan CSS Variables / Design Tokens. Hindari dependensi CSS tambahan (Tailwind/Bootstrap) kecuali diminta pengguna secara eksplisit.
+- **Backend**: Supabase (BaaS) — Autentikasi, PostgreSQL Database, Storage, dan RLS.
+- **Dilarang keras**: Membuat server backend terpisah (Express/NestJS) karena batasan arsitektur MVP adalah arsitektur langsung React ke Supabase Client SDK (`@supabase/supabase-js`).
+
+## 2. Aturan Kritis Bisnis Pembayaran (Payment Business Rules)
+1. **Rule 1 (Verifikasi Transfer)**: Pembayaran metode transfer wajib melalui verifikasi admin. Saat disubmit jamaah, status awal SELALU `pending` ("Menunggu Verifikasi").
+2. **Rule 2 (Pencatatan Cash)**: Pembayaran metode cash HANYA boleh dicatat oleh Admin/Petugas. Pembayaran cash otomatis berstatus `verified` ("Terverifikasi") begitu disimpan.
+3. **Rule 3 (Perhitungan Sah)**: HANYA pembayaran dengan status `verified` yang boleh dijumlahkan ke dalam Total Pembayaran Terverifikasi (`total_terbayar`).
+4. **Rule 4 & 5 (Pending/Rejected Tidak Mengurangi Sisa)**: Pembayaran berstatus `pending` atau `rejected` TIDAK PERNAH mengurangi sisa tagihan.
+5. **Rule 6 (Cicilan Bebas Fleksibel)**: Cicilan tidak memiliki nominal tetap, dengan validasi: `0 < nominal_cicilan <= sisa_tagihan`.
+6. **Rule 7 (Batas Maksimal Tagihan)**: Nominal pembayaran tidak boleh melebihi sisa tagihan jamaah.
+7. **Rule 8 (Bayar Penuh Otomatis)**: Jika jenis pembayaran adalah Bayar Penuh (`full`), nominal otomatis dikunci tepat sebesar sisa tagihan saat itu dan jamaah tidak dapat mengubah nominal tersebut secara manual.
+8. **Hak Akses Cash**: Jamaah TIDAK BOLEH memiliki antarmuka, tombol, atau endpoint untuk mencatat pembayaran cash sendiri.
+
+## 3. Aturan Manajemen Dokumen
+- Dokumen pendukung: KTP, Kartu Keluarga, Passport, Pas Foto, Buku Nikah, Dokumen Kesehatan.
+- Status dokumen: `Belum Ada`, `Menunggu Verifikasi`, `Lengkap`, `Ditolak`.
+- Rumus kelengkapan dokumen: `(Jumlah Dokumen Lengkap / Jumlah Dokumen Wajib) * 100%`.
+- Label progres:
+  - `100%`: Lengkap
+  - `70% - 99%`: Hampir Lengkap
+  - `1% - 69%`: Belum Lengkap
+  - `0%`: Belum Ada
+
+## 4. Keamanan & Hak Akses (RLS & Routing)
+- Gunakan Supabase Row Level Security (RLS) di setiap tabel:
+  - Role `admin`: Akses penuh membaca, memvalidasi, mengedit, dan menghapus seluruh data.
+  - Role `jamaah`: HANYA dapat membaca profil sendiri, mengunggah dokumen sendiri, melihat status dokumen sendiri, melihat paket dan jadwalnya, serta mengajukan pembayaran transfer sendiri. Dilarang melihat data jamaah lain.
+- Terapkan `ProtectedRoute.jsx` di sisi frontend untuk mencegah role `jamaah` masuk ke rute `/admin/*` dan sebaliknya.
+
+## 5. UI/UX & Design Guidelines
+- Bahasa antarmuka: **Bahasa Indonesia** formal dan ramah pengguna.
+- Estetika: Tampilan modern, bersih, islami elegan (warna utama Emerald/Forest Green dengan aksen Gold/Champagne dan Slate neutral).
+- Status badge yang jelas:
+  - `verified` / `Lengkap` -> Hijau / Emerald
+  - `pending` / `Menunggu Verifikasi` -> Kuning / Amber
+  - `rejected` / `Ditolak` -> Merah / Rose
+  - `Belum Bayar` / `Belum Lengkap` -> Abu-abu / Slate
+- Format Rupiah konsisten di seluruh tabel dan kartu: `Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 })`.
