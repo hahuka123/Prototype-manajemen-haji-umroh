@@ -22,7 +22,10 @@ export default function Register() {
     setIsSubmitting(true);
 
     try {
-      await register(email, password, fullName, phone);
+      // Bersihkan spasi dan ubah jadi huruf kecil otomatis
+      const cleanEmail = email.trim().toLowerCase();
+      
+      await register(cleanEmail, password, fullName, phone);
       setSuccessMsg('Pendaftaran berhasil! Anda kini dapat masuk menggunakan email dan kata sandi tersebut.');
       setTimeout(() => {
         navigate('/login', { replace: true });
