@@ -53,46 +53,46 @@ Dokumen ini memetakan langkah-langkah pengembangan **Prototipe Manajemen Haji & 
 ---
 
 ### Fase 4: Modul Jamaah & Manajemen Berkas Dokumen
-- [ ] Halaman Admin: `src/pages/admin/Jamaah.jsx` — Tabel data jamaah, form registrasi jamaah baru, filter status, dan fitur pencarian (**FR-04**, **FR-05**).
-- [ ] Halaman Admin: `src/pages/admin/DetailJamaah.jsx` — Profil lengkap satu jamaah beserta seluruh status berkas dan riwayat keuangannya.
-- [ ] Halaman Admin: `src/pages/admin/Dokumen.jsx` — Verifikasi kelengkapan 6 dokumen (KTP, KK, Paspor, Foto, Buku Nikah, Kesehatan) dengan tombol Validasi / Tolak (**FR-06**).
-- [ ] Halaman Jamaah: `src/pages/jamaah/Profil.jsx` — Jamaah dapat melihat data pribadinya sendiri.
-- [ ] Halaman Jamaah: `src/pages/jamaah/Dokumen.jsx` — Jamaah mengunggah berkas ke Supabase Storage dan memantau status verifikasi.
-- [ ] Implementasikan formula otomatis persentase kelengkapan berkas pada database view / frontend helper (**FR-07**).
+- [x] Halaman Admin: `src/pages/admin/Jamaah.jsx` — Tabel data jamaah, form registrasi jamaah baru, filter status, dan fitur pencarian (**FR-04**, **FR-05**).
+- [x] Halaman Admin: `src/pages/admin/DetailJamaah.jsx` — Profil lengkap satu jamaah beserta seluruh status berkas dan riwayat keuangannya.
+- [x] Halaman Admin: `src/pages/admin/Dokumen.jsx` — Verifikasi kelengkapan 6 dokumen (KTP, KK, Paspor, Foto, Buku Nikah, Kesehatan) dengan tombol Validasi / Tolak (**FR-06**).
+- [x] Halaman Jamaah: `src/pages/jamaah/Profil.jsx` — Jamaah dapat melihat data pribadinya sendiri.
+- [x] Halaman Jamaah: `src/pages/jamaah/Dokumen.jsx` — Jamaah mengunggah berkas ke Supabase Storage dan memantau status verifikasi.
+- [x] Implementasikan formula otomatis persentase kelengkapan berkas pada database view / frontend helper (**FR-07**).
 
 ---
 
 ### Fase 5: Modul Pembayaran & Logika Finansial (Inti Sistem)
-- [ ] **Alur Jamaah - Pengajuan Transfer**:
+- [x] **Alur Jamaah - Pengajuan Transfer**:
   - Halaman `src/pages/jamaah/AjukanPembayaran.jsx` (**FR-08**).
   - Pilihan radio button: Bayar Penuh vs Cicilan (**FR-09**).
   - Validasi sistem: Bayar Penuh mengunci nominal otomatis sebesar sisa tagihan, Cicilan mengizinkan `0 < nominal <= sisa tagihan` (**FR-10**).
   - Unggah bukti struk transfer ke Supabase Storage bucket `payment-proofs/` (**FR-11**).
   - Status tersimpan otomatis sebagai `pending` (Menunggu Verifikasi).
-- [ ] **Alur Admin - Verifikasi Transfer**:
+- [x] **Alur Admin - Verifikasi Transfer**:
   - Halaman `src/pages/admin/VerifikasiPembayaran.jsx` — Menampilkan antrean transaksi transfer berstatus `pending` (**FR-12**).
   - Pop-up modal pratinjau bukti transfer dengan aksi **[✓ Verifikasi]** (**FR-13**) atau **[✕ Tolak]** (**FR-14**).
   - Validasi wajib mengisi alasan penolakan jika ditolak (**FR-15**).
-- [ ] **Alur Admin - Pencatatan Cash**:
+- [x] **Alur Admin - Pencatatan Cash**:
   - Halaman `src/pages/admin/CatatPembayaranCash.jsx` — Form input pembayaran cash langsung dari jamaah (**FR-16**).
   - Transaksi otomatis tersimpan dengan status `verified` (**FR-17**).
-- [ ] **Integritas Agregasi Keuangan**:
+- [x] **Integritas Agregasi Keuangan**:
   - Memastikan HANYA transaksi berstatus `verified` yang dijumlahkan ke total bayar sah (**FR-18**, **FR-19**).
   - Perhitungan sisa tagihan: `Harga Paket - Total Terbayar Sah` (**FR-20**).
   - Penentuan otomatis status pelunasan: *Belum Bayar*, *Cicilan*, atau *Lunas* (**FR-21**).
-- [ ] Halaman Riwayat Transaksi:
+- [x] Halaman Riwayat Transaksi:
   - Admin: `src/pages/admin/Pembayaran.jsx` (Daftar semua transaksi seluruh jamaah).
   - Jamaah: `src/pages/jamaah/Pembayaran.jsx` (Hanya transaksi miliknya sendiri) (**FR-22**).
 
 ---
 
 ### Fase 6: Dashboard Metrik & Pemantauan Operasional
-- [ ] Halaman `src/pages/admin/Dashboard.jsx` (**FR-03**):
+- [x] Halaman `src/pages/admin/Dashboard.jsx` (**FR-03**):
   - Ringkasan Jamaah: Total jamaah, jamaah aktif, jamaah siap berangkat.
   - Ringkasan Dokumen: Total berkas lengkap, belum lengkap, menunggu verifikasi.
   - Ringkasan Pembayaran: Jumlah jamaah belum bayar, cicilan, lunas, serta alert antrean transfer pending.
   - Informasi keberangkatan terdekat.
-- [ ] Halaman `src/pages/jamaah/Dashboard.jsx`:
+- [x] Halaman `src/pages/jamaah/Dashboard.jsx`:
   - Salam sapaan nama jamaah.
   - Kartu paket aktif dan jadwal keberangkatan.
   - Kartu status keuangan: Harga Paket, Terbayar, Sisa Tagihan, Status Pelunasan.

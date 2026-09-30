@@ -1,43 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import PaymentStatusBadge from '../../components/PaymentStatusBadge';
 import Modal from '../../components/Modal';
 import { Check, X, Eye, AlertCircle } from 'lucide-react';
+import { paymentService } from '../../services/paymentService';
+import { jamaahService } from '../../services/jamaahService';
+import { packageService } from '../../services/packageService';
 
 export default function AdminVerifikasiPembayaran() {
   const [selectedTrx, setSelectedTrx] = useState(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  
+  const [pendingList, setPendingList] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const pendingList = [
-    {
-      id: 'pay-001',
-      jamaah_name: 'Ahmad Fauzan',
-      package_name: 'Umrah Reguler 2027',
-      payment_type: 'Cicilan',
-      amount: 7000000,
-      bank_name: 'Bank Syariah Indonesia (BSI)',
-      reference_number: 'TRX-99881122',
-      payment_date: '30/09/2026',
-      notes: 'Cicilan ke-3 pelunasan umrah',
-      proof_file: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80'
-    }
-  ];
+  useEffect(() => {
+      fetchData();
+  }, []);
 
-  function handleVerify(trx) {
-    if (confirm(`Verifikasi pembayaran dari ${trx.jamaah_name} sebesar Rp ${trx.amount.toLocaleString('id-ID')}?`)) {
-      alert('Pembayaran berhasil diverifikasi! Dana telah sah masuk ke total terbayar.');
+  const fetchData = async () => {
+      try {
+          setLoading(true);
+          const payments = await paymentService.getPendingTransfers();
+          
+          // Hydrate with Jamaah and Package info
+          const enriched = [];
+          for (const p of payments) {
+              const j = await jamaahService.getJamaahById(p.jamaah_id);
+              let packageName = '-';
+              if (j.paket_id) {
+                  const pkgs = await packageService.getPackages();
+                  const pkg = pkgs.find(x => x.id === j.paket_id);
+                  if (pkg) packageName = pkg.nama;
+              }
+              enriched.push({
+                  ...p,
+                  jamaah_name: j.nama_lengkap,
+                  package_name: packageName
+              });
+          }
+          setPendingList(enriched);
+      } catch (err) {
+          console.error(err);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  async function handleVerify(trx) {
+    if (confirm(`Verifikasi pembayaran dari ${trx.jamaah_name} sebesar Rp ${trx.nominal.toLocaleString('id-ID')}?`)) {
+      try {
+          await paymentService.verifyTransfer(trx.id, trx.jamaah_id, 'verified', '');
+          alert('Pembayaran berhasil diverifikasi! Dana telah sah masuk ke total terbayar.');
+          fetchData();
+      } catch (err) {
+          alert(err.message);
+      }
     }
   }
 
-  function handleRejectSubmit() {
+  async function handleRejectSubmit() {
     if (!rejectionReason.trim()) {
       alert('Wajib mengisi alasan penolakan.');
       return;
     }
-    alert(`Pembayaran ditolak dengan alasan: "${rejectionReason}". Jamaah akan menerima notifikasi status ditolak.`);
-    setRejectModalOpen(false);
-    setRejectionReason('');
-    setSelectedTrx(null);
+    
+    try {
+        await paymentService.verifyTransfer(selectedTrx.id, selectedTrx.jamaah_id, 'rejected', rejectionReason);
+        alert(`Pembayaran ditolak dengan alasan: "${rejectionReason}". Jamaah akan menerima notifikasi status ditolak.`);
+        setRejectModalOpen(false);
+        setRejectionReason('');
+        setSelectedTrx(null);
+        fetchData();
+    } catch (err) {
+        alert(err.message);
+    }
   }
 
   return (
@@ -59,52 +96,60 @@ export default function AdminVerifikasiPembayaran() {
                 <th>Jenis</th>
                 <th>Nominal</th>
                 <th>Bank & No. Ref</th>
+                <th>Tanggal</th>
                 <th>Bukti Transfer</th>
                 <th>Aksi Verifikasi</th>
               </tr>
             </thead>
             <tbody>
-              {pendingList.map((trx) => (
-                <tr key={trx.id}>
-                  <td style={{ fontWeight: 600 }}>{trx.jamaah_name}</td>
-                  <td>{trx.package_name}</td>
-                  <td>{trx.payment_type}</td>
-                  <td style={{ fontWeight: 700, color: 'var(--primary-800)' }}>
-                    Rp {trx.amount.toLocaleString('id-ID')}
-                  </td>
-                  <td>
-                    <div>{trx.bank_name}</div>
-                    <code style={{ fontSize: '0.75rem' }}>{trx.reference_number}</code>
-                  </td>
-                  <td>
-                    <button 
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => setSelectedTrx(trx)}
-                    >
-                      <Eye size={14} /> Lihat Struk
-                    </button>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button 
-                        className="btn btn-primary btn-sm"
-                        onClick={() => handleVerify(trx)}
-                      >
-                        <Check size={14} /> Verifikasi
-                      </button>
-                      <button 
-                        className="btn btn-danger btn-sm"
-                        onClick={() => {
-                          setSelectedTrx(trx);
-                          setRejectModalOpen(true);
-                        }}
-                      >
-                        <X size={14} /> Tolak
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {loading ? (
+                  <tr><td colSpan="8" style={{ textAlign: 'center' }}>Loading...</td></tr>
+              ) : pendingList.length === 0 ? (
+                  <tr><td colSpan="8" style={{ textAlign: 'center' }}>Tidak ada transaksi yang menunggu verifikasi.</td></tr>
+              ) : (
+                  pendingList.map((trx) => (
+                    <tr key={trx.id}>
+                      <td style={{ fontWeight: 600 }}>{trx.jamaah_name}</td>
+                      <td>{trx.package_name}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{trx.jenis}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--primary-800)' }}>
+                        Rp {trx.nominal.toLocaleString('id-ID')}
+                      </td>
+                      <td>
+                        <div>{trx.bank_asal}</div>
+                        <code style={{ fontSize: '0.75rem' }}>{trx.no_referensi}</code>
+                      </td>
+                      <td>{new Date(trx.tanggal).toLocaleDateString('id-ID')}</td>
+                      <td>
+                        <button 
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setSelectedTrx(trx)}
+                        >
+                          <Eye size={14} /> Lihat Struk
+                        </button>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button 
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleVerify(trx)}
+                          >
+                            <Check size={14} /> Verifikasi
+                          </button>
+                          <button 
+                            className="btn btn-danger btn-sm"
+                            onClick={() => {
+                              setSelectedTrx(trx);
+                              setRejectModalOpen(true);
+                            }}
+                          >
+                            <X size={14} /> Tolak
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+              )}
             </tbody>
           </table>
         </div>
@@ -141,13 +186,13 @@ export default function AdminVerifikasiPembayaran() {
           <div>
             <div style={{ marginBottom: '14px', fontSize: '0.88rem' }}>
               <div><strong>Jamaah:</strong> {selectedTrx.jamaah_name}</div>
-              <div><strong>Nominal:</strong> Rp {selectedTrx.amount.toLocaleString('id-ID')}</div>
-              <div><strong>Bank Tujuan:</strong> {selectedTrx.bank_name}</div>
-              <div><strong>No. Referensi:</strong> {selectedTrx.reference_number}</div>
+              <div><strong>Nominal:</strong> Rp {selectedTrx.nominal.toLocaleString('id-ID')}</div>
+              <div><strong>Bank Tujuan:</strong> {selectedTrx.bank_asal}</div>
+              <div><strong>No. Referensi:</strong> {selectedTrx.no_referensi}</div>
             </div>
             <div style={{ textAlign: 'center', background: '#000', borderRadius: 'var(--radius-md)', padding: '10px' }}>
               <img 
-                src={selectedTrx.proof_file} 
+                src="https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80" 
                 alt="Bukti Transfer" 
                 style={{ maxWidth: '100%', maxHeight: '350px', borderRadius: '4px', objectFit: 'contain' }} 
               />

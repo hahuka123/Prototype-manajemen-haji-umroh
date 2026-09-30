@@ -1,53 +1,51 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import StatCard from '../../components/StatCard';
 import PaymentStatusBadge from '../../components/PaymentStatusBadge';
 import { CreditCard, Send, CheckCircle, Clock } from 'lucide-react';
+import { paymentService } from '../../services/paymentService';
+import { jamaahService } from '../../services/jamaahService';
+import { packageService } from '../../services/packageService';
 
 export default function JamaahPembayaran() {
-  const hargaPaket = 35000000;
-  const totalVerified = 20000000;
-  const sisaTagihan = hargaPaket - totalVerified;
-  const statusPelunasan = 'Cicilan';
+  const [jamaah, setJamaah] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const [paket, setPaket] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const history = [
-    {
-      id: 'p-1',
-      date: '30/09/2026',
-      type: 'Cicilan',
-      method: 'Transfer (BSI)',
-      amount: 7000000,
-      status: 'pending',
-      notes: 'Sedang diverifikasi'
-    },
-    {
-      id: 'p-2',
-      date: '20/09/2026',
-      type: 'Cicilan',
-      method: 'Transfer (BCA)',
-      amount: 5000000,
-      status: 'rejected',
-      notes: 'Bukti transfer buram/tidak terbaca'
-    },
-    {
-      id: 'p-3',
-      date: '10/09/2026',
-      type: 'Cicilan',
-      method: 'Cash',
-      amount: 3000000,
-      status: 'verified',
-      notes: 'Diterima di kantor'
-    },
-    {
-      id: 'p-4',
-      date: '01/09/2026',
-      type: 'Cicilan',
-      method: 'Transfer (BSI)',
-      amount: 5000000,
-      status: 'verified',
-      notes: 'DP Awal Pendaftaran'
-    }
-  ];
+  useEffect(() => {
+      const fetchData = async () => {
+          try {
+              setLoading(true);
+              const jId = 1;
+              const jData = await jamaahService.getJamaahById(jId);
+              setJamaah(jData);
+              
+              if (jData.paket_id) {
+                  const pkgs = await packageService.getPackages();
+                  setPaket(pkgs.find(p => p.id === jData.paket_id));
+              }
+
+              const pData = await paymentService.getPaymentsByJamaah(jId);
+              // Sort descending
+              pData.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+              setPayments(pData);
+          } catch (err) {
+              console.error(err);
+          } finally {
+              setLoading(false);
+          }
+      };
+      fetchData();
+  }, []);
+
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (!jamaah) return <div className="p-8 text-center">Data Jamaah tidak ditemukan.</div>;
+
+  const hargaPaket = jamaah.sisa_tagihan + jamaah.total_terbayar;
+  const totalVerified = jamaah.total_terbayar;
+  const sisaTagihan = jamaah.sisa_tagihan;
+  const statusPelunasan = jamaah.status_pembayaran;
 
   return (
     <div>
@@ -69,7 +67,7 @@ export default function JamaahPembayaran() {
         <StatCard
           title="Harga Paket"
           value={`Rp ${hargaPaket.toLocaleString('id-ID')}`}
-          subtext="Umrah Reguler 2027"
+          subtext={paket ? paket.nama : 'Belum pilih paket'}
           icon={<CreditCard size={24} />}
           variant="primary"
         />
@@ -85,7 +83,7 @@ export default function JamaahPembayaran() {
           value={`Rp ${sisaTagihan.toLocaleString('id-ID')}`}
           subtext={`Status: ${statusPelunasan}`}
           icon={<CreditCard size={24} />}
-          variant="warning"
+          variant={sisaTagihan > 0 ? "warning" : "success"}
         />
         <StatCard
           title="Status Pelunasan"
@@ -118,22 +116,28 @@ export default function JamaahPembayaran() {
               </tr>
             </thead>
             <tbody>
-              {history.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.date}</td>
-                  <td>{row.type}</td>
-                  <td>{row.method}</td>
-                  <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                    Rp {row.amount.toLocaleString('id-ID')}
-                  </td>
-                  <td>
-                    <PaymentStatusBadge status={row.status} />
-                  </td>
-                  <td style={{ fontSize: '0.82rem', color: row.status === 'rejected' ? '#b91c1c' : 'var(--text-muted)' }}>
-                    {row.notes}
-                  </td>
-                </tr>
-              ))}
+              {payments.length === 0 ? (
+                  <tr><td colSpan="6" style={{ textAlign: 'center' }}>Belum ada histori pembayaran.</td></tr>
+              ) : (
+                  payments.map((row) => (
+                    <tr key={row.id}>
+                      <td>{new Date(row.tanggal).toLocaleDateString('id-ID')}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{row.jenis}</td>
+                      <td style={{ textTransform: 'capitalize' }}>
+                          {row.metode} {row.bank_asal ? `(${row.bank_asal})` : ''}
+                      </td>
+                      <td style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                        Rp {row.nominal.toLocaleString('id-ID')}
+                      </td>
+                      <td>
+                        <PaymentStatusBadge status={row.status} />
+                      </td>
+                      <td style={{ fontSize: '0.82rem', color: row.status === 'rejected' ? '#b91c1c' : 'var(--text-muted)' }}>
+                        {row.catatan_admin || (row.status === 'pending' ? 'Menunggu verifikasi admin' : 'Sistem')}
+                      </td>
+                    </tr>
+                  ))
+              )}
             </tbody>
           </table>
         </div>

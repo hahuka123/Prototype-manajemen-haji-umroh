@@ -1,20 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Banknote, CheckCircle, Info } from 'lucide-react';
+import { paymentService } from '../../services/paymentService';
+import { jamaahService } from '../../services/jamaahService';
+import { packageService } from '../../services/packageService';
 
 export default function AdminCatatPembayaranCash() {
   const navigate = useNavigate();
 
   // State form
-  const [selectedJamaah, setSelectedJamaah] = useState('j-001');
+  const [jamaahList, setJamaahList] = useState([]);
+  const [packages, setPackages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [selectedJamaahId, setSelectedJamaahId] = useState('');
   const [paymentType, setPaymentType] = useState('installment'); // full | installment
-  const [nominal, setNominal] = useState('5000000');
+  const [nominal, setNominal] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('Pembayaran tunai di kantor biro');
   const [isSuccess, setIsSuccess] = useState(false);
 
-  // Mock data jamaah & sisa tagihan
-  const sisaTagihan = 15000000;
+  useEffect(() => {
+      const fetchData = async () => {
+          try {
+              setLoading(true);
+              const [jData, pData] = await Promise.all([
+                  jamaahService.getJamaah(),
+                  packageService.getPackages()
+              ]);
+              setJamaahList(jData);
+              setPackages(pData);
+              if (jData.length > 0) {
+                  setSelectedJamaahId(String(jData[0].id));
+              }
+          } catch (err) {
+              console.error(err);
+          } finally {
+              setLoading(false);
+          }
+      };
+      fetchData();
+  }, []);
+
+  const selectedJamaah = jamaahList.find(j => String(j.id) === selectedJamaahId);
+  const sisaTagihan = selectedJamaah ? selectedJamaah.sisa_tagihan : 0;
 
   function handleTypeChange(type) {
     setPaymentType(type);
@@ -24,7 +53,7 @@ export default function AdminCatatPembayaranCash() {
     }
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const num = Number(nominal);
 
@@ -34,12 +63,29 @@ export default function AdminCatatPembayaranCash() {
       return;
     }
 
-    // Rule 2 & 17: Cash yang dicatat admin langsung berstatus verified
-    setIsSuccess(true);
-    setTimeout(() => {
-      navigate('/admin/pembayaran');
-    }, 1500);
+    try {
+        await paymentService.submitCash({
+            jamaah_id: Number(selectedJamaahId),
+            jenis: paymentType,
+            nominal: num,
+            catatan: notes,
+            tanggal: new Date(paymentDate).toISOString()
+        });
+        
+        // Rule 2 & 17: Cash yang dicatat admin langsung berstatus verified
+        setIsSuccess(true);
+        setTimeout(() => {
+          navigate('/admin/pembayaran');
+        }, 1500);
+    } catch (err) {
+        alert(err.message);
+    }
   }
+
+  const getPackageName = (id) => {
+      const p = packages.find(pkg => pkg.id === id);
+      return p ? p.nama : '-';
+  };
 
   return (
     <div style={{ maxWidth: '650px', margin: '0 auto' }}>
@@ -69,7 +115,9 @@ export default function AdminCatatPembayaranCash() {
           </div>
         </div>
 
-        {isSuccess ? (
+        {loading ? (
+            <div className="text-center p-8">Loading...</div>
+        ) : isSuccess ? (
           <div style={{ textAlign: 'center', padding: '30px 10px' }}>
             <CheckCircle size={54} color="#10b981" style={{ margin: '0 auto 16px' }} />
             <h3 style={{ marginBottom: '8px' }}>Pembayaran Cash Berhasil Dicatat!</h3>
@@ -83,13 +131,22 @@ export default function AdminCatatPembayaranCash() {
               <label className="form-label">Pilih Jamaah</label>
               <select 
                 className="form-select"
-                value={selectedJamaah}
-                onChange={(e) => setSelectedJamaah(e.target.value)}
+                value={selectedJamaahId}
+                onChange={(e) => setSelectedJamaahId(e.target.value)}
               >
-                <option value="j-001">Ahmad Fauzan (Umrah Reguler 2027 • Sisa: Rp 15.000.000)</option>
-                <option value="j-002">Siti Aminah (Umrah Reguler 2027 • Sisa: Rp 25.000.000)</option>
+                {jamaahList.map(j => (
+                    <option key={j.id} value={j.id}>
+                        {j.nama_lengkap} ({getPackageName(j.paket_id)} • Sisa: Rp {j.sisa_tagihan.toLocaleString('id-ID')})
+                    </option>
+                ))}
               </select>
             </div>
+            
+            {sisaTagihan === 0 && selectedJamaah && (
+                 <div style={{ padding: '12px', background: '#ecfdf5', color: '#047857', border: '1px solid #10b981', borderRadius: '8px', marginBottom: '16px' }}>
+                     Jamaah ini sudah Lunas.
+                 </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Jenis Pembayaran</label>
@@ -100,6 +157,7 @@ export default function AdminCatatPembayaranCash() {
                     name="cashPaymentType"
                     checked={paymentType === 'installment'}
                     onChange={() => handleTypeChange('installment')}
+                    disabled={sisaTagihan === 0}
                   />
                   <span>Cicilan (Sebagian Tagihan)</span>
                 </label>
@@ -109,6 +167,7 @@ export default function AdminCatatPembayaranCash() {
                     name="cashPaymentType"
                     checked={paymentType === 'full'}
                     onChange={() => handleTypeChange('full')}
+                    disabled={sisaTagihan === 0}
                   />
                   <span>Bayar Penuh (Pelunasan Otomatis)</span>
                 </label>
@@ -124,7 +183,7 @@ export default function AdminCatatPembayaranCash() {
                 type="number"
                 required
                 className="form-input"
-                readOnly={paymentType === 'full'}
+                readOnly={paymentType === 'full' || sisaTagihan === 0}
                 value={nominal}
                 onChange={(e) => setNominal(e.target.value)}
                 min="1000"
@@ -170,6 +229,7 @@ export default function AdminCatatPembayaranCash() {
                 type="submit"
                 className="btn btn-primary"
                 style={{ flex: 2 }}
+                disabled={sisaTagihan === 0}
               >
                 <Banknote size={18} />
                 <span>Simpan Transaksi Cash (Verified)</span>

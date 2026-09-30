@@ -1,20 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, Send, AlertCircle, CheckCircle, Info } from 'lucide-react';
+import { paymentService } from '../../services/paymentService';
+import { jamaahService } from '../../services/jamaahService';
 
 export default function JamaahAjukanPembayaran() {
   const navigate = useNavigate();
 
-  const sisaTagihan = 15000000; // Contoh sisa tagihan jamaah
+  const [sisaTagihan, setSisaTagihan] = useState(0);
+  const [jamaah, setJamaah] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const [paymentType, setPaymentType] = useState('installment'); // 'full' | 'installment'
-  const [amount, setAmount] = useState('5000000');
+  const [amount, setAmount] = useState('');
   const [bankName, setBankName] = useState('Bank Syariah Indonesia (BSI)');
   const [refNumber, setRefNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [proofFileName, setProofFileName] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const j = await jamaahService.getJamaahById(1);
+        setJamaah(j);
+        setSisaTagihan(j.sisa_tagihan);
+        setAmount('5000000'); // default
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
 
   function handleTypeChange(type) {
     setPaymentType(type);
@@ -37,7 +58,7 @@ export default function JamaahAjukanPembayaran() {
     }
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const num = Number(amount);
 
@@ -57,12 +78,28 @@ export default function JamaahAjukanPembayaran() {
       return;
     }
 
-    // Sukses disubmit
-    setIsSuccess(true);
-    setTimeout(() => {
-      navigate('/jamaah/pembayaran');
-    }, 1800);
+    try {
+        await paymentService.submitTransfer({
+            jamaah_id: 1, // Assuming logged in user is 1
+            jenis: paymentType,
+            nominal: num,
+            bank_asal: bankName,
+            no_referensi: refNumber,
+            catatan: notes,
+            bukti_url: proofFileName // just mock
+        });
+        
+        setIsSuccess(true);
+        setTimeout(() => {
+          navigate('/jamaah/pembayaran');
+        }, 1800);
+    } catch (err) {
+        setErrorMsg(err.message);
+    }
   }
+
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
+  if (!jamaah) return <div className="p-8 text-center">Data Jamaah tidak ditemukan.</div>;
 
   return (
     <div style={{ maxWidth: '680px', margin: '0 auto' }}>
@@ -91,28 +128,19 @@ export default function JamaahAjukanPembayaran() {
               Rp {sisaTagihan.toLocaleString('id-ID')}
             </div>
           </div>
-          <span className="status-badge pending">Status: Cicilan</span>
+          <span className={`status-badge ${jamaah.status_pembayaran === 'Lunas' ? 'verified' : 'pending'}`}>
+            Status: {jamaah.status_pembayaran}
+          </span>
         </div>
 
-        {errorMsg && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '12px 14px',
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: 'var(--radius-md)',
-            color: '#b91c1c',
-            fontSize: '0.85rem',
-            marginBottom: '20px'
-          }}>
-            <AlertCircle size={18} />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {isSuccess ? (
+        {sisaTagihan === 0 ? (
+            <div style={{ textAlign: 'center', padding: '36px 16px' }}>
+                <CheckCircle size={56} color="#10b981" style={{ margin: '0 auto 16px' }} />
+                <h3 style={{ marginBottom: '8px' }}>Tagihan Sudah Lunas</h3>
+                <p style={{ color: 'var(--text-secondary)' }}>Anda tidak memiliki tagihan aktif saat ini.</p>
+                <button className="btn btn-primary mt-4" onClick={() => navigate('/jamaah/dashboard')}>Kembali ke Dashboard</button>
+            </div>
+        ) : isSuccess ? (
           <div style={{ textAlign: 'center', padding: '36px 16px' }}>
             <CheckCircle size={56} color="#10b981" style={{ margin: '0 auto 16px' }} />
             <h3 style={{ marginBottom: '8px' }}>Pengajuan Pembayaran Terkirim!</h3>
@@ -122,6 +150,24 @@ export default function JamaahAjukanPembayaran() {
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
+            {errorMsg && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '12px 14px',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: 'var(--radius-md)',
+                color: '#b91c1c',
+                fontSize: '0.85rem',
+                marginBottom: '20px'
+              }}>
+                <AlertCircle size={18} />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+            
             {/* Pilihan Jenis Pembayaran */}
             <div className="form-group">
               <label className="form-label">Jenis Pembayaran</label>

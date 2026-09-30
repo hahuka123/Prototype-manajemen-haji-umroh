@@ -1,19 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Upload, CheckCircle2, Clock, XCircle, AlertCircle, FileText } from 'lucide-react';
+import { documentService } from '../../services/documentService';
+import { jamaahService } from '../../services/jamaahService';
 
 export default function JamaahDokumen() {
-  const [documents, setDocuments] = useState([
-    { id: 'doc-1', type: 'KTP (Kartu Tanda Penduduk)', status: 'Lengkap', date: '15/08/2026', notes: '' },
-    { id: 'doc-2', type: 'Kartu Keluarga (KK)', status: 'Lengkap', date: '15/08/2026', notes: '' },
-    { id: 'doc-3', type: 'Paspor Asli', status: 'Lengkap', date: '20/08/2026', notes: '' },
-    { id: 'doc-4', type: 'Pas Foto Background Putih (4x6)', status: 'Lengkap', date: '20/08/2026', notes: '' },
-    { id: 'doc-5', type: 'Buku Nikah (Bagi Suami Istri)', status: 'Lengkap', date: '22/08/2026', notes: '' },
-    { id: 'doc-6', type: 'Buku Kuning / Dokumen Kesehatan Meningitis', status: 'Menunggu Verifikasi', date: '28/09/2026', notes: 'Sedang diperiksa petugas' }
-  ]);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [persentase, setPersentase] = useState(0);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      // Assuming Jamaah ID 1
+      const jamaahId = 1;
+      const docs = await documentService.getDocumentsByJamaah(jamaahId);
+      setDocuments(docs);
+      
+      const jamaah = await jamaahService.getJamaahById(jamaahId);
+      setPersentase(jamaah.dokumen_persentase);
+      
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpload = async (tipe) => {
+    // Mock file selection
+    const mockFile = new File(['mock content'], `${tipe}.pdf`, { type: 'application/pdf' });
+    
+    try {
+        await documentService.uploadDocument(1, tipe, mockFile);
+        alert(`Dokumen ${tipe} berhasil diunggah dan menunggu verifikasi.`);
+        fetchData();
+    } catch (err) {
+        alert(err.message);
+    }
+  };
 
   const totalWajib = 6;
   const totalLengkap = documents.filter(d => d.status === 'Lengkap').length;
-  const persentase = Math.round((totalLengkap / totalWajib) * 100);
 
   return (
     <div>
@@ -65,26 +96,36 @@ export default function JamaahDokumen() {
               </tr>
             </thead>
             <tbody>
-              {documents.map((doc, idx) => (
-                <tr key={doc.id}>
-                  <td>{idx + 1}</td>
-                  <td style={{ fontWeight: 600 }}>{doc.type}</td>
-                  <td>
-                    {doc.status === 'Lengkap' && <span className="status-badge lengkap">Lengkap</span>}
-                    {doc.status === 'Menunggu Verifikasi' && <span className="status-badge pending">Menunggu Verifikasi</span>}
-                    {doc.status === 'Ditolak' && <span className="status-badge rejected">Ditolak</span>}
-                    {doc.status === 'Belum Ada' && <span className="status-badge neutral">Belum Ada</span>}
-                  </td>
-                  <td>{doc.date || '-'}</td>
-                  <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{doc.notes || '-'}</td>
-                  <td>
-                    <button className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', gap: '6px' }}>
-                      <Upload size={14} />
-                      <span>{doc.status === 'Belum Ada' ? 'Upload' : 'Ganti File'}</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {loading ? (
+                  <tr><td colSpan="6" style={{ textAlign: 'center' }}>Loading...</td></tr>
+              ) : documents.length === 0 ? (
+                  <tr><td colSpan="6" style={{ textAlign: 'center' }}>Tidak ada dokumen.</td></tr>
+              ) : (
+                  documents.map((doc, idx) => (
+                      <tr key={doc.id}>
+                        <td>{idx + 1}</td>
+                        <td style={{ fontWeight: 600, textTransform: 'capitalize' }}>{doc.tipe.replace('-', ' ')}</td>
+                        <td>
+                          {doc.status === 'Lengkap' && <span className="status-badge verified">Lengkap</span>}
+                          {doc.status === 'Menunggu Verifikasi' && <span className="status-badge pending">Menunggu Verifikasi</span>}
+                          {doc.status === 'Ditolak' && <span className="status-badge rejected">Ditolak</span>}
+                          {doc.status === 'Belum Ada' && <span className="status-badge" style={{ backgroundColor: '#e2e8f0', color: '#475569' }}>Belum Ada</span>}
+                        </td>
+                        <td>{doc.updated_at ? new Date(doc.updated_at).toLocaleDateString('id-ID') : '-'}</td>
+                        <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{doc.catatan || '-'}</td>
+                        <td>
+                          <button 
+                            className="btn btn-secondary btn-sm" 
+                            style={{ display: 'inline-flex', gap: '6px' }}
+                            onClick={() => handleUpload(doc.tipe)}
+                          >
+                            <Upload size={14} />
+                            <span>{doc.status === 'Belum Ada' ? 'Upload' : 'Ganti File'}</span>
+                          </button>
+                        </td>
+                      </tr>
+                  ))
+              )}
             </tbody>
           </table>
         </div>
