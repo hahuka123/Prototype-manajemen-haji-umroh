@@ -8,7 +8,6 @@ import { packageService } from '../../services/packageService';
 import { scheduleService } from '../../services/scheduleService';
 import { documentService } from '../../services/documentService';
 import { paymentService } from '../../services/paymentService';
-//import DocumentStatusBadge from '../../components/DocumentStatusBadge';
 
 export default function JamaahDashboard() {
   const { profile } = useAuth();
