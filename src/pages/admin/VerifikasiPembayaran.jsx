@@ -5,11 +5,14 @@ import { Check, X, Eye, AlertCircle } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function AdminVerifikasiPembayaran() {
+  const { user } = useAuth();
   const [selectedTrx, setSelectedTrx] = useState(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [proofUrl, setProofUrl] = useState(null);
   
   const [pendingList, setPendingList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +34,7 @@ export default function AdminVerifikasiPembayaran() {
               if (j.paket_id) {
                   const pkgs = await packageService.getPackages();
                   const pkg = pkgs.find(x => x.id === j.paket_id);
-                  if (pkg) packageName = pkg.nama;
+                  if (pkg) packageName = pkg.nama || pkg.name;
               }
               enriched.push({
                   ...p,
@@ -47,10 +50,23 @@ export default function AdminVerifikasiPembayaran() {
       }
   };
 
+  const handleOpenPreview = async (trx) => {
+    setSelectedTrx(trx);
+    setProofUrl(null);
+    try {
+      if (trx.bukti_url) {
+        const url = await paymentService.getPaymentProofUrl(trx.bukti_url);
+        setProofUrl(url);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   async function handleVerify(trx) {
     if (confirm(`Verifikasi pembayaran dari ${trx.jamaah_name} sebesar Rp ${trx.nominal.toLocaleString('id-ID')}?`)) {
       try {
-          await paymentService.verifyTransfer(trx.id, trx.jamaah_id, 'verified', '');
+          await paymentService.verifyTransfer(trx.id, user.id, 'verified', '');
           alert('Pembayaran berhasil diverifikasi! Dana telah sah masuk ke total terbayar.');
           fetchData();
       } catch (err) {
@@ -66,11 +82,12 @@ export default function AdminVerifikasiPembayaran() {
     }
     
     try {
-        await paymentService.verifyTransfer(selectedTrx.id, selectedTrx.jamaah_id, 'rejected', rejectionReason);
+        await paymentService.verifyTransfer(selectedTrx.id, user.id, 'rejected', rejectionReason);
         alert(`Pembayaran ditolak dengan alasan: "${rejectionReason}". Jamaah akan menerima notifikasi status ditolak.`);
         setRejectModalOpen(false);
         setRejectionReason('');
         setSelectedTrx(null);
+        setProofUrl(null);
         fetchData();
     } catch (err) {
         alert(err.message);
@@ -123,7 +140,7 @@ export default function AdminVerifikasiPembayaran() {
                       <td>
                         <button 
                           className="btn btn-secondary btn-sm"
-                          onClick={() => setSelectedTrx(trx)}
+                          onClick={() => handleOpenPreview(trx)}
                         >
                           <Eye size={14} /> Lihat Struk
                         </button>
@@ -158,11 +175,14 @@ export default function AdminVerifikasiPembayaran() {
       {/* Modal Preview Bukti Transfer */}
       <Modal
         isOpen={Boolean(selectedTrx && !rejectModalOpen)}
-        onClose={() => setSelectedTrx(null)}
+        onClose={() => {
+          setSelectedTrx(null);
+          setProofUrl(null);
+        }}
         title="Pratinjau Bukti Struk Transfer"
         footer={(
           <>
-            <button className="btn btn-secondary" onClick={() => setSelectedTrx(null)}>Tutup</button>
+            <button className="btn btn-secondary" onClick={() => { setSelectedTrx(null); setProofUrl(null); }}>Tutup</button>
             <button 
               className="btn btn-danger" 
               onClick={() => setRejectModalOpen(true)}
@@ -174,6 +194,7 @@ export default function AdminVerifikasiPembayaran() {
               onClick={() => {
                 const cur = selectedTrx;
                 setSelectedTrx(null);
+                setProofUrl(null);
                 handleVerify(cur);
               }}
             >
@@ -191,11 +212,15 @@ export default function AdminVerifikasiPembayaran() {
               <div><strong>No. Referensi:</strong> {selectedTrx.no_referensi}</div>
             </div>
             <div style={{ textAlign: 'center', background: '#000', borderRadius: 'var(--radius-md)', padding: '10px' }}>
-              <img 
-                src="https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80" 
-                alt="Bukti Transfer" 
-                style={{ maxWidth: '100%', maxHeight: '350px', borderRadius: '4px', objectFit: 'contain' }} 
-              />
+              {proofUrl ? (
+                <img 
+                  src={proofUrl} 
+                  alt="Bukti Transfer" 
+                  style={{ maxWidth: '100%', maxHeight: '350px', borderRadius: '4px', objectFit: 'contain' }} 
+                />
+              ) : (
+                <div style={{ color: '#fff', padding: '50px' }}>Loading image...</div>
+              )}
             </div>
           </div>
         )}

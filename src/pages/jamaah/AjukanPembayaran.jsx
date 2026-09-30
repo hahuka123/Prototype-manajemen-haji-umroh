@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, Send, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function JamaahAjukanPembayaran() {
   const navigate = useNavigate();
+  const { user, profile } = useAuth();
 
   const [sisaTagihan, setSisaTagihan] = useState(0);
   const [jamaah, setJamaah] = useState(null);
@@ -16,6 +18,7 @@ export default function JamaahAjukanPembayaran() {
   const [bankName, setBankName] = useState('Bank Syariah Indonesia (BSI)');
   const [refNumber, setRefNumber] = useState('');
   const [notes, setNotes] = useState('');
+  const [proofFile, setProofFile] = useState(null);
   const [proofFileName, setProofFileName] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -24,77 +27,87 @@ export default function JamaahAjukanPembayaran() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const j = await jamaahService.getJamaahById(1);
+        if (!profile?.id) {
+          throw new Error('Profil pengguna belum tersedia.');
+        }
+        const j = await jamaahService.getMyJamaah(profile.id);
         setJamaah(j);
-        setSisaTagihan(j.sisa_tagihan);
-        setAmount('5000000'); // default
+        setSisaTagihan(Number(j.sisa_tagihan));
+        setAmount(String(j.sisa_tagihan)); // default
       } catch (err) {
         console.error(err);
+        setErrorMsg(err.message);
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [profile?.id]);
 
   function handleTypeChange(type) {
     setPaymentType(type);
     setErrorMsg('');
     if (type === 'full') {
-      // Rule 8: Bayar Penuh otomatis mengunci nominal sebesar sisa tagihan
       setAmount(String(sisaTagihan));
     }
   }
 
   function handleFileChange(e) {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setErrorMsg('Ukuran file maksimal 5 MB.');
-        return;
-      }
-      setProofFileName(file.name);
-      setErrorMsg('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+    if (!allowed.includes(file.type)) {
+      setErrorMsg('Bukti harus JPG, PNG, atau PDF.');
+      return;
     }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg('Ukuran file maksimal 5 MB.');
+      return;
+    }
+
+    setProofFile(file);
+    setProofFileName(file.name);
+    setErrorMsg('');
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     const num = Number(amount);
 
-    // Rule 7 & Validasi: 0 < Nominal <= Sisa Tagihan
-    if (num <= 0) {
-      setErrorMsg('Nominal pembayaran harus lebih besar dari Rp 0.');
+    if (paymentType === 'full' && num !== Number(sisaTagihan)) {
+      setErrorMsg('Bayar penuh harus sama dengan sisa tagihan.');
       return;
     }
 
-    if (num > sisaTagihan) {
-      setErrorMsg(`Nominal pembayaran melebihi sisa tagihan (Maksimal Rp ${sisaTagihan.toLocaleString('id-ID')}).`);
+    if (num <= 0 || num > Number(sisaTagihan)) {
+      setErrorMsg(`Nominal pembayaran tidak valid. Sisa tagihan: Rp ${Number(sisaTagihan).toLocaleString('id-ID')}`);
       return;
     }
 
-    if (!proofFileName) {
-      setErrorMsg('Wajib mengunggah bukti struk transfer pembayaran.');
+    if (!proofFile) {
+      setErrorMsg('Bukti transfer wajib diunggah.');
       return;
     }
 
     try {
-        await paymentService.submitTransfer({
-            jamaah_id: 1, // Assuming logged in user is 1
-            jenis: paymentType,
-            nominal: num,
-            bank_asal: bankName,
-            no_referensi: refNumber,
-            catatan: notes,
-            bukti_url: proofFileName // just mock
-        });
+      await paymentService.submitTransfer({
+        jamaah_id: jamaah.id,
+        jenis: paymentType,
+        nominal: num,
+        bank_asal: bankName,
+        no_referensi: refNumber,
+        catatan: notes,
+        bukti_file: proofFile
+      });
         
-        setIsSuccess(true);
-        setTimeout(() => {
-          navigate('/jamaah/pembayaran');
-        }, 1800);
+      setIsSuccess(true);
+      setTimeout(() => {
+        navigate('/jamaah/pembayaran');
+      }, 1800);
     } catch (err) {
-        setErrorMsg(err.message);
+      setErrorMsg(err.message);
     }
   }
 

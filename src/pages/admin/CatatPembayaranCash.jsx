@@ -4,9 +4,11 @@ import { Banknote, CheckCircle, Info } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function AdminCatatPembayaranCash() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // State form
   const [jamaahList, setJamaahList] = useState([]);
@@ -48,8 +50,9 @@ export default function AdminCatatPembayaranCash() {
   function handleTypeChange(type) {
     setPaymentType(type);
     if (type === 'full') {
-      // Rule 8: Bayar Penuh mengunci nominal otomatis sebesar sisa tagihan
       setNominal(String(sisaTagihan));
+    } else {
+      setNominal('');
     }
   }
 
@@ -57,7 +60,6 @@ export default function AdminCatatPembayaranCash() {
     e.preventDefault();
     const num = Number(nominal);
 
-    // Rule 7: Tidak boleh melebihi sisa tagihan
     if (num <= 0 || num > sisaTagihan) {
       alert(`Nominal harus lebih besar dari 0 dan maksimal Rp ${sisaTagihan.toLocaleString('id-ID')}`);
       return;
@@ -65,14 +67,13 @@ export default function AdminCatatPembayaranCash() {
 
     try {
         await paymentService.submitCash({
-            jamaah_id: Number(selectedJamaahId),
+            jamaah_id: selectedJamaahId,
             jenis: paymentType,
             nominal: num,
             catatan: notes,
             tanggal: new Date(paymentDate).toISOString()
-        });
+        }, user.id);
         
-        // Rule 2 & 17: Cash yang dicatat admin langsung berstatus verified
         setIsSuccess(true);
         setTimeout(() => {
           navigate('/admin/pembayaran');
@@ -84,7 +85,7 @@ export default function AdminCatatPembayaranCash() {
 
   const getPackageName = (id) => {
       const p = packages.find(pkg => pkg.id === id);
-      return p ? p.nama : '-';
+      return p ? p.name || p.nama : '-';
   };
 
   return (
