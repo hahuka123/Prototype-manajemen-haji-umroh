@@ -1,51 +1,92 @@
-import React from 'react';
-import { Calendar, Clock, MapPin, Info } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { scheduleService } from '../../services/scheduleService';
+import { packageService } from '../../services/packageService';
+import { 
+  Calendar, 
+  Clock, 
+  MapPin, 
+  Info, 
+  Search, 
+  Compass,
+  AlertCircle
+} from 'lucide-react';
 
 export default function JamaahJadwal() {
-  const scheduleItems = [
-    {
-      day: 1,
-      date: '10 Januari 2027',
-      time: '08:00 WIB',
-      activity: 'Kumpul Bandara Soekarno Hatta & Manasik Bandara',
-      location: 'Terminal 3 Gate 1 Internasional',
-      desc: 'Pengarahan akhir dari pembimbing (Muthawwif), pembagian paspor dan boarding pass penerbangan.'
-    },
-    {
-      day: 1,
-      date: '10 Januari 2027',
-      time: '12:30 WIB',
-      activity: 'Take-off Menuju Bandara Madinah (MED)',
-      location: 'Pesawat Saudia Airlines SV-819',
-      desc: 'Penerbangan langsung Jakarta - Madinah tanpa transit.'
-    },
-    {
-      day: 2,
-      date: '11 Januari 2027',
-      time: '09:00 WAS',
-      activity: 'Ziarah Masjid Nabawi & Makam Baqi',
-      location: 'Pelataran Masjid Nabawi Madinah',
-      desc: 'Ziarah bersama pembimbing biro perjalanan ke makam Rasulullah SAW, Sayyidina Abu Bakar, dan Umar bin Khattab.'
-    },
-    {
-      day: 2,
-      date: '11 Januari 2027',
-      time: '14:00 WAS',
-      activity: 'Masuk Raudhah Syarifah (Tasrih Resmi)',
-      location: 'Raudhah Masjid Nabawi',
-      desc: 'Pelaksanaan sholat sunnah dan doa di Raudhah sesuai jadwal izin Tasrih Kementerian Haji Saudi.'
+  const [packageData, setPackageData] = useState(null);
+  const [schedules, setSchedules] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  // Jamaah saat ini terdaftar pada paket pkg-1 (Umrah Reguler)
+  const currentPackageId = 'pkg-1';
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [pkg, schs] = await Promise.all([
+        packageService.getById(currentPackageId),
+        scheduleService.getByPackage(currentPackageId)
+      ]);
+      setPackageData(pkg);
+      setSchedules(schs);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
-  ];
+  }
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const filtered = schedules.filter(s => 
+    s.activity.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.description && s.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div>
       <div className="page-header">
         <div className="page-header-title">
           <h1>Jadwal & Agenda Perjalanan Ibadah</h1>
-          <p>Rangkaian itinerary harian perjalanan ibadah untuk <strong>Paket Umrah Reguler 2027</strong>.</p>
+          <p>Rangkaian itinerary harian perjalanan ibadah khusus untuk paket yang Anda ikuti.</p>
         </div>
       </div>
 
+      {/* Info Paket Banner */}
+      {packageData && (
+        <div className="card" style={{ marginBottom: '24px', background: 'linear-gradient(135deg, #064e3b, #022c22)', color: '#fff' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <div>
+              <div style={{ fontSize: '0.8rem', color: '#a7f3d0', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
+                Paket Anda Terdaftar
+              </div>
+              <h2 style={{ color: '#fff', margin: '4px 0 6px', fontSize: '1.4rem' }}>
+                {packageData.name}
+              </h2>
+              <div style={{ display: 'flex', gap: '18px', fontSize: '0.86rem', color: 'rgba(255,255,255,0.85)', flexWrap: 'wrap' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Calendar size={15} color="#6ee7b7" />
+                  Keberangkatan: <strong>{new Date(packageData.departure_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Clock size={15} color="#6ee7b7" />
+                  Durasi: <strong>{packageData.duration} Hari</strong>
+                </span>
+              </div>
+            </div>
+
+            <div style={{ background: 'rgba(255,255,255,0.1)', padding: '10px 18px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.2)' }}>
+              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#a7f3d0' }}>Status Paket</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>Penerbangan Terjadwal</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notice Card */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -54,64 +95,99 @@ export default function JamaahJadwal() {
         background: 'var(--primary-50)',
         border: '1px solid var(--primary-100)',
         borderRadius: 'var(--radius-lg)',
-        marginBottom: '24px',
+        marginBottom: '20px',
         color: 'var(--primary-800)'
       }}>
         <Info size={22} style={{ flexShrink: 0 }} />
-        <div style={{ fontSize: '0.88rem' }}>
-          Jadwal dapat mengalami penyesuaian waktu (*Waktu Arab Saudi / WAS*) mengikuti koordinasi muthawwif dan otoritas setempat.
+        <div style={{ fontSize: '0.86rem' }}>
+          Agenda dapat mengalami penyesuaian waktu (Waktu Arab Saudi / WAS) mengikuti koordinasi pembimbing (Muthawwif) dan regulasi otoritas setempat.
         </div>
       </div>
 
-      <div className="card">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {scheduleItems.map((item, idx) => (
+      {/* Pencarian Jadwal */}
+      <div className="card" style={{ marginBottom: '20px', padding: '14px 18px' }}>
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Cari kegiatan, ziarah, atau lokasi (contoh: Raudhah, Miqat, Bandara)..."
+            style={{ paddingLeft: '38px' }}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+        </div>
+      </div>
+
+      {/* Timeline List */}
+      {loading ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Memuat jadwal kegiatan ibadah...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center', padding: '36px' }}>
+          <Compass size={36} color="var(--text-muted)" style={{ margin: '0 auto 10px' }} />
+          <h3>Tidak Ada Kegiatan yang Cocok</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+            Coba gunakan kata kunci pencarian yang lain.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {filtered.map((item, index) => (
             <div 
-              key={idx}
+              key={item.id}
+              className="card"
               style={{
                 display: 'flex',
                 gap: '20px',
-                padding: '18px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-color)',
-                alignItems: 'flex-start'
+                padding: '20px',
+                alignItems: 'flex-start',
+                borderLeft: '4px solid var(--primary-600)',
+                transition: 'transform 0.2s ease, box-shadow 0.2s ease'
               }}
             >
               <div style={{
                 background: 'linear-gradient(135deg, var(--primary-800), var(--primary-600))',
                 color: '#fff',
-                padding: '10px 14px',
+                padding: '12px 14px',
                 borderRadius: 'var(--radius-md)',
                 textAlign: 'center',
                 minWidth: '85px',
                 boxShadow: 'var(--shadow-sm)'
               }}>
-                <div style={{ fontSize: '0.7rem', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>HARI KE</div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{item.day}</div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>AGENDA</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>#{index + 1}</div>
               </div>
 
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: '0.8rem', color: 'var(--accent-700)', fontWeight: 700 }}>
-                  {item.date}
+                  {new Date(item.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                 </div>
-                <h3 style={{ fontSize: '1.15rem', margin: '4px 0 6px' }}>{item.activity}</h3>
-                <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '10px' }}>
-                  {item.desc}
-                </p>
-                <div style={{ display: 'flex', gap: '18px', fontSize: '0.82rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Clock size={14} color="var(--primary-600)" /> {item.time}
+                <h3 style={{ fontSize: '1.2rem', margin: '4px 0 6px', color: 'var(--text-main)' }}>
+                  {item.activity}
+                </h3>
+                {item.description && (
+                  <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '12px' }}>
+                    {item.description}
+                  </p>
+                )}
+
+                <div style={{ display: 'flex', gap: '20px', fontSize: '0.84rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Clock size={15} color="var(--primary-700)" />
+                    <strong>{item.time}</strong>
                   </span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <MapPin size={14} color="var(--primary-600)" /> {item.location}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <MapPin size={15} color="var(--primary-700)" />
+                    {item.location}
                   </span>
                 </div>
               </div>
             </div>
           ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }

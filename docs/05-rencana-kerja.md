@@ -45,9 +45,10 @@ Dokumen ini memetakan langkah-langkah pengembangan **Prototipe Manajemen Haji & 
 ---
 
 ### Fase 3: Modul Master Data (Paket & Jadwal Perjalanan)
-- [ ] Halaman Admin: `src/pages/admin/Paket.jsx` — Form input paket, edit harga, tanggal keberangkatan/kepulangan, dan durasi hari (**FR-23**).
-- [ ] Halaman Admin: `src/pages/admin/Jadwal.jsx` — Form input agenda kegiatan, penentuan jam, lokasi, dan relasi ke paket (**FR-24**).
-- [ ] Halaman Jamaah: `src/pages/jamaah/Jadwal.jsx` — Menampilkan jadwal kegiatan sesuai paket yang diikuti jamaah (**FR-25**).
+- [x] Service data terintegrasi: `src/services/packageService.js` & `src/services/scheduleService.js`.
+- [x] Halaman Admin: `src/pages/admin/Paket.jsx` — Katalog paket perjalanan, kalkulasi durasi otomatis, modal CRUD harga, tanggal keberangkatan/pulang (**FR-23**).
+- [x] Halaman Admin: `src/pages/admin/Jadwal.jsx` — Filter jadwal per paket perjalanan, form input agenda kegiatan, jam & zona waktu, lokasi, relasi ke paket (**FR-24**).
+- [x] Halaman Jamaah: `src/pages/jamaah/Jadwal.jsx` — Menampilkan rangkaian itinerary harian sesuai paket yang diikuti jamaah, timeline visual, dan fitur pencarian (**FR-25**).
 
 ---
 
