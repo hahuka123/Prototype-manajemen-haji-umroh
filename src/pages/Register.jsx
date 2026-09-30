@@ -1,42 +1,37 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Lock, Mail, ShieldCheck, UserCheck, AlertCircle } from 'lucide-react';
+import { Lock, Mail, AlertCircle, User, Phone } from 'lucide-react';
 
-export default function Login() {
+export default function Register() {
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { login, demoLogin, isConfigured } = useAuth();
+  const { register, isConfigured } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  const from = location.state?.from?.pathname || '/';
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErrorMsg('');
+    setSuccessMsg('');
     setIsSubmitting(true);
 
     try {
-      await login(email, password);
-      navigate(from, { replace: true });
+      await register(email, password, fullName, phone);
+      setSuccessMsg('Pendaftaran berhasil! Anda kini dapat masuk menggunakan email dan kata sandi tersebut.');
+      setTimeout(() => {
+        navigate('/login', { replace: true });
+      }, 3000);
     } catch (err) {
       console.error(err);
-      setErrorMsg(err.message || 'Email atau kata sandi tidak valid. Silakan coba lagi.');
+      setErrorMsg(err.message || 'Gagal melakukan pendaftaran. Silakan coba lagi.');
     } finally {
       setIsSubmitting(false);
-    }
-  }
-
-  function handleDemoSelect(role) {
-    demoLogin(role);
-    if (role === 'admin') {
-      navigate('/admin/dashboard', { replace: true });
-    } else {
-      navigate('/jamaah/dashboard', { replace: true });
     }
   }
 
@@ -91,7 +86,7 @@ export default function Login() {
             🕋
           </div>
           <h2 style={{ fontSize: '1.45rem', color: 'var(--text-main)', marginBottom: '6px' }}>
-            Masuk ke Sistem
+            Daftar Akun Baru
           </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
             Portal Manajemen Haji & Umroh Terpadu
@@ -116,12 +111,76 @@ export default function Login() {
           </div>
         )}
 
+        {successMsg && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            padding: '12px 14px',
+            background: '#ecfdf5',
+            border: '1px solid #a7f3d0',
+            borderRadius: 'var(--radius-md)',
+            color: '#065f46',
+            fontSize: '0.85rem',
+            marginBottom: '20px'
+          }}>
+            <User size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label" htmlFor="login-email">Alamat Email</label>
+            <label className="form-label" htmlFor="reg-name">Nama Lengkap</label>
             <div style={{ position: 'relative' }}>
               <input
-                id="login-email"
+                id="reg-name"
+                type="text"
+                required
+                className="form-input"
+                style={{ paddingLeft: '40px' }}
+                placeholder="Nama sesuai KTP"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+              <User size={18} style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-muted)'
+              }} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="reg-phone">No WhatsApp</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                id="reg-phone"
+                type="tel"
+                required
+                className="form-input"
+                style={{ paddingLeft: '40px' }}
+                placeholder="081234567890"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+              <Phone size={18} style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-muted)'
+              }} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="reg-email">Alamat Email</label>
+            <div style={{ position: 'relative' }}>
+              <input
+                id="reg-email"
                 type="email"
                 required
                 className="form-input"
@@ -141,15 +200,15 @@ export default function Login() {
           </div>
 
           <div className="form-group">
-            <label className="form-label" htmlFor="login-password">Kata Sandi</label>
+            <label className="form-label" htmlFor="reg-password">Kata Sandi</label>
             <div style={{ position: 'relative' }}>
               <input
-                id="login-password"
+                id="reg-password"
                 type="password"
                 required
                 className="form-input"
                 style={{ paddingLeft: '40px' }}
-                placeholder="••••••••"
+                placeholder="Minimal 6 karakter"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -169,85 +228,28 @@ export default function Login() {
             style={{ width: '100%', padding: '12px', marginTop: '10px' }}
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Memproses Masuk...' : 'Masuk Akun'}
+            {isSubmitting ? 'Mendaftarkan Akun...' : 'Daftar Akun'}
           </button>
         </form>
 
-        <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '0.88rem' }}>
-          <span style={{ color: 'var(--text-muted)' }}>Belum punya akun?</span>{' '}
-          <Link to="/register" style={{ color: 'var(--primary-600)', fontWeight: 600, textDecoration: 'none' }}>
-            Daftar sekarang
+        <div style={{ marginTop: '24px', textAlign: 'center', fontSize: '0.88rem' }}>
+          <span style={{ color: 'var(--text-muted)' }}>Sudah punya akun?</span>{' '}
+          <Link to="/login" style={{ color: 'var(--primary-600)', fontWeight: 600, textDecoration: 'none' }}>
+            Masuk di sini
           </Link>
         </div>
 
-        {/* Demo Fast Login Switcher */}
-        <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
-          <div style={{
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: 'var(--text-muted)',
-            textAlign: 'center',
-            marginBottom: '12px'
-          }}>
-            Akses Cepat Pengujian (Mode Demo)
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <button
-              type="button"
-              onClick={() => handleDemoSelect('admin')}
-              className="btn btn-secondary"
-              style={{
-                fontSize: '0.8rem',
-                padding: '8px 10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                border: '1px solid var(--primary-100)',
-                background: 'var(--primary-50)',
-                color: 'var(--primary-800)'
-              }}
-            >
-              <ShieldCheck size={16} />
-              <span>Login Admin</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleDemoSelect('jamaah')}
-              className="btn btn-secondary"
-              style={{
-                fontSize: '0.8rem',
-                padding: '8px 10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                border: '1px solid var(--accent-100)',
-                background: 'var(--accent-50)',
-                color: 'var(--accent-800)'
-              }}
-            >
-              <UserCheck size={16} />
-              <span>Login Jamaah</span>
-            </button>
-          </div>
-
-          {!isConfigured && (
+        {!isConfigured && (
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-color)', textAlign: 'center' }}>
             <p style={{
-              fontSize: '0.72rem',
+              fontSize: '0.75rem',
               color: 'var(--text-muted)',
-              textAlign: 'center',
-              marginTop: '12px',
               lineHeight: 1.4
             }}>
-              Kredensial Supabase di <code>.env</code> masih default. Gunakan tombol demo di atas untuk mencoba seluruh alur antarmuka secara instan.
+              Kredensial Supabase di <code>.env</code> masih default. Anda hanya bisa mencoba mendaftar secara nyata jika telah dikonfigurasi.
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 
 // Halaman Publik
 import Login from './pages/Login';
+import Register from './pages/Register';
 
 // Halaman Admin
 import AdminDashboard from './pages/admin/Dashboard';
@@ -62,6 +63,7 @@ export default function App() {
         <Routes>
           {/* Public Route */}
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
           {/* Root Redirect */}
           <Route path="/" element={<RootRedirect />} />

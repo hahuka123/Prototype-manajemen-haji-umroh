@@ -118,6 +118,30 @@ export function AuthProvider({ children }) {
     return data;
   }
 
+  // Register riil via Supabase Auth
+  async function register(email, password, fullName, phone) {
+    if (!isConfigured) {
+      throw new Error('Supabase belum dikonfigurasi. Harap gunakan tombol "Demo Mode" di bawah form.');
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          phone: phone,
+          role: 'jamaah'
+        }
+      }
+    });
+
+    if (error) throw error;
+    
+    // Supabase will automatically create the profile because we have a trigger setup
+    return data;
+  }
+
   // Demo Login instan untuk presentasi prototipe
   function demoLogin(role = 'admin') {
     const isAdm = role === 'admin';
@@ -163,6 +187,7 @@ export function AuthProvider({ children }) {
     isJamaah: role === 'jamaah',
     loading,
     login,
+    register,
     logout,
     demoLogin,
     isConfigured
