@@ -8,7 +8,7 @@ import { packageService } from '../../services/packageService';
 import { scheduleService } from '../../services/scheduleService';
 import { documentService } from '../../services/documentService';
 import { paymentService } from '../../services/paymentService';
-import DocumentStatusBadge from '../../components/DocumentStatusBadge';
+//import DocumentStatusBadge from '../../components/DocumentStatusBadge';
 
 export default function JamaahDashboard() {
   const { profile } = useAuth();
@@ -23,50 +23,50 @@ export default function JamaahDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-      const fetchData = async () => {
-          try {
-              setLoading(true);
-              const jData = await jamaahService.getJamaahById(jamaahId);
-              setJamaah(jData);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const jData = await jamaahService.getJamaahById(jamaahId);
+        setJamaah(jData);
 
-              if (jData.paket_id) {
-                  const pkgs = await packageService.getPackages();
-                  setPaket(pkgs.find(p => p.id === jData.paket_id));
-                  
-                  const schedules = await scheduleService.getSchedules();
-                  setJadwal(schedules.find(s => s.paket_id === jData.paket_id));
-              }
+        if (jData.paket_id) {
+          const pkgs = await packageService.getPackages();
+          setPaket(pkgs.find(p => p.id === jData.paket_id));
 
-              const [docs, pays] = await Promise.all([
-                  documentService.getDocumentsByJamaah(jamaahId),
-                  paymentService.getPaymentsByJamaah(jamaahId)
-              ]);
-              
-              setDocuments(docs);
-              setPendingPayments(pays.filter(p => p.status === 'pending' || p.status === 'rejected'));
-              
-          } catch (err) {
-              console.error(err);
-          } finally {
-              setLoading(false);
-          }
-      };
-      fetchData();
+          const schedules = await scheduleService.getSchedules();
+          setJadwal(schedules.find(s => s.paket_id === jData.paket_id));
+        }
+
+        const [docs, pays] = await Promise.all([
+          documentService.getDocumentsByJamaah(jamaahId),
+          paymentService.getPaymentsByJamaah(jamaahId)
+        ]);
+
+        setDocuments(docs);
+        setPendingPayments(pays.filter(p => p.status === 'pending' || p.status === 'rejected'));
+
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, [jamaahId]);
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (!jamaah) return <div className="p-8 text-center">Data tidak ditemukan.</div>;
 
   const getDocName = (type) => {
-      const map = {
-          ktp: 'KTP',
-          kk: 'Kartu Keluarga',
-          paspor: 'Paspor Asli',
-          buku_kuning: 'Buku Kuning / Vaksin',
-          foto: 'Pas Foto',
-          surat_kesehatan: 'Surat Kesehatan'
-      };
-      return map[type] || type;
+    const map = {
+      ktp: 'KTP',
+      kk: 'Kartu Keluarga',
+      paspor: 'Paspor Asli',
+      buku_kuning: 'Buku Kuning / Vaksin',
+      foto: 'Pas Foto',
+      surat_kesehatan: 'Surat Kesehatan'
+    };
+    return map[type] || type;
   };
 
   const hargaPaket = jamaah.total_terbayar + jamaah.sisa_tagihan;
@@ -88,30 +88,30 @@ export default function JamaahDashboard() {
 
       {/* Alert Jika Ada Pembayaran Menunggu Verifikasi atau Ditolak */}
       {pendingPayments.map(p => (
-          <div key={p.id} style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '14px 18px',
-            background: p.status === 'rejected' ? '#fef2f2' : '#fffbeb',
-            border: `1px solid ${p.status === 'rejected' ? '#fecaca' : '#fcd34d'}`,
-            borderRadius: 'var(--radius-lg)',
-            marginBottom: '16px',
-            color: p.status === 'rejected' ? '#991b1b' : '#92400e'
-          }}>
-            <AlertCircle size={22} style={{ flexShrink: 0 }} />
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-                Pembayaran {p.status === 'rejected' ? 'Ditolak' : 'Menunggu Verifikasi'}: Rp {p.nominal.toLocaleString('id-ID')}
-              </div>
-              <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
-                {p.status === 'rejected' 
-                  ? `Pembayaran Anda ditolak admin. Alasan: ${p.catatan_admin}. Silakan upload ulang.`
-                  : 'Bukti transfer Anda telah dikirim dan sedang dalam antrean verifikasi oleh petugas biro.'
-                }
-              </div>
+        <div key={p.id} style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '14px 18px',
+          background: p.status === 'rejected' ? '#fef2f2' : '#fffbeb',
+          border: `1px solid ${p.status === 'rejected' ? '#fecaca' : '#fcd34d'}`,
+          borderRadius: 'var(--radius-lg)',
+          marginBottom: '16px',
+          color: p.status === 'rejected' ? '#991b1b' : '#92400e'
+        }}>
+          <AlertCircle size={22} style={{ flexShrink: 0 }} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+              Pembayaran {p.status === 'rejected' ? 'Ditolak' : 'Menunggu Verifikasi'}: Rp {p.nominal.toLocaleString('id-ID')}
+            </div>
+            <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
+              {p.status === 'rejected'
+                ? `Pembayaran Anda ditolak admin. Alasan: ${p.catatan_admin}. Silakan upload ulang.`
+                : 'Bukti transfer Anda telah dikirim dan sedang dalam antrean verifikasi oleh petugas biro.'
+              }
             </div>
           </div>
+        </div>
       ))}
 
       {/* Ringkasan Tagihan & Status */}
@@ -162,13 +162,13 @@ export default function JamaahDashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Tanggal Keberangkatan:</span>
               <span style={{ fontWeight: 600, color: 'var(--primary-700)' }}>
-                  {jadwal ? new Date(jadwal.tanggal_keberangkatan).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : '-'}
+                {jadwal ? new Date(jadwal.tanggal_keberangkatan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Tanggal Kepulangan:</span>
               <span style={{ fontWeight: 600 }}>
-                  {jadwal ? new Date(jadwal.tanggal_kepulangan).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : '-'}
+                {jadwal ? new Date(jadwal.tanggal_kepulangan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
               </span>
             </div>
           </div>
@@ -187,10 +187,10 @@ export default function JamaahDashboard() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {documents.slice(0, 3).map(doc => (
-                <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.88rem' }}>{getDocName(doc.jenis_dokumen)}</span>
-                  <DocumentStatusBadge status={doc.status} />
-                </div>
+              <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.88rem' }}>{getDocName(doc.jenis_dokumen)}</span>
+                <DocumentStatusBadge status={doc.status} />
+              </div>
             ))}
             {documents.length === 0 && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Belum ada dokumen yang diunggah.</div>}
           </div>
