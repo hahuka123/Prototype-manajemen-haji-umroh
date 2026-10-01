@@ -56,12 +56,14 @@ export const jamaahService = {
     const { data, error } = await supabase
       .from('jamaah')
       .insert([{
+        profile_id: payload.profile_id,
         nik: payload.nik,
+        passport_number: payload.nomor_paspor || null,
         gender: payload.jenis_kelamin,
         phone: payload.no_telepon,
         address: payload.alamat,
-        package_id: payload.paket_id,
-        birth_date: '1990-01-01',
+        package_id: payload.paket_id || null,
+        birth_date: payload.tanggal_lahir,
       }])
       .select()
       .single();

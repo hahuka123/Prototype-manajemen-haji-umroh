@@ -14,8 +14,8 @@ export default function JamaahProfil() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Default mapping demo user to jamaah ID 1
-        const j = await jamaahService.getJamaahById(1);
+        if (!profile?.id) return;
+        const j = await jamaahService.getMyJamaah(profile.id);
         setJamaah(j);
         if (j.paket_id) {
             const pkgs = await packageService.getPackages();
@@ -27,8 +27,11 @@ export default function JamaahProfil() {
         setLoading(false);
       }
     };
-    fetchData();
-  }, []);
+
+    if (profile?.id) {
+      fetchData();
+    }
+  }, [profile?.id]);
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (!jamaah) return <div className="p-8 text-center">Data Jamaah tidak ditemukan.</div>;

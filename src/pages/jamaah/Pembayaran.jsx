@@ -6,38 +6,49 @@ import { CreditCard, Send, CheckCircle, Clock } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function JamaahPembayaran() {
+  const { profile } = useAuth();
   const [jamaah, setJamaah] = useState(null);
   const [payments, setPayments] = useState([]);
   const [paket, setPaket] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-      const fetchData = async () => {
-          try {
-              setLoading(true);
-              const jId = 1;
-              const jData = await jamaahService.getJamaahById(jId);
-              setJamaah(jData);
-              
-              if (jData.paket_id) {
-                  const pkgs = await packageService.getPackages();
-                  setPaket(pkgs.find(p => p.id === jData.paket_id));
-              }
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        if (!profile?.id) {
+          throw new Error('Profil pengguna belum tersedia.');
+        }
 
-              const pData = await paymentService.getPaymentsByJamaah(jId);
-              // Sort descending
-              pData.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
-              setPayments(pData);
-          } catch (err) {
-              console.error(err);
-          } finally {
-              setLoading(false);
-          }
-      };
+        const jData = await jamaahService.getMyJamaah(profile.id);
+        setJamaah(jData);
+
+        const jamaahId = jData.id;
+
+        if (jData.paket_id) {
+          const pkgs = await packageService.getPackages();
+          setPaket(pkgs.find(p => p.id === jData.paket_id));
+        }
+
+        const pData = await paymentService.getPaymentsByJamaah(jamaahId);
+        pData.sort(
+          (a, b) => new Date(b.tanggal) - new Date(a.tanggal)
+        );
+        setPayments(pData);
+      } catch (err) {
+        console.error('Gagal mengambil data pembayaran:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (profile?.id) {
       fetchData();
-  }, []);
+    }
+  }, [profile?.id]);
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (!jamaah) return <div className="p-8 text-center">Data Jamaah tidak ditemukan.</div>;

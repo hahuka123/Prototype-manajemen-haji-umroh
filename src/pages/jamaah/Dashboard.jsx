@@ -11,8 +11,7 @@ import { paymentService } from '../../services/paymentService';
 
 export default function JamaahDashboard() {
   const { profile } = useAuth();
-  const namaJamaah = profile?.full_name || 'Ahmad Fauzan';
-  const jamaahId = 1; // Assuming logged in as jamaah ID 1 for now
+  const namaJamaah = profile?.full_name || 'Jamaah';
 
   const [jamaah, setJamaah] = useState(null);
   const [paket, setPaket] = useState(null);
@@ -25,15 +24,24 @@ export default function JamaahDashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const jData = await jamaahService.getJamaahById(jamaahId);
+        if (!profile?.id) {
+          throw new Error('Profil pengguna belum tersedia.');
+        }
+
+        // Ambil data jamaah berdasarkan profile user yang sedang login
+        const jData = await jamaahService.getMyJamaah(profile.id);
         setJamaah(jData);
+
+        const jamaahId = jData.id;
 
         if (jData.paket_id) {
           const pkgs = await packageService.getPackages();
           setPaket(pkgs.find(p => p.id === jData.paket_id));
 
           const schedules = await scheduleService.getSchedules();
-          setJadwal(schedules.find(s => s.paket_id === jData.paket_id));
+          setJadwal(
+            schedules.find(s => s.paket_id === jData.paket_id)
+          );
         }
 
         const [docs, pays] = await Promise.all([
@@ -42,16 +50,22 @@ export default function JamaahDashboard() {
         ]);
 
         setDocuments(docs);
-        setPendingPayments(pays.filter(p => p.status === 'pending' || p.status === 'rejected'));
-
+        setPendingPayments(
+          pays.filter(
+            p => p.status === 'pending' || p.status === 'rejected'
+          )
+        );
       } catch (err) {
-        console.error(err);
+        console.error('Gagal mengambil data dashboard jamaah:', err);
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
-  }, [jamaahId]);
+
+    if (profile?.id) {
+      fetchData();
+    }
+  }, [profile?.id]);
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (!jamaah) return <div className="p-8 text-center">Data tidak ditemukan.</div>;

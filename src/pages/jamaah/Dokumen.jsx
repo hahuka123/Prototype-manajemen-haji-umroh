@@ -2,27 +2,31 @@ import React, { useState, useEffect } from 'react';
 import { Upload, CheckCircle2, Clock, XCircle, AlertCircle, FileText } from 'lucide-react';
 import { documentService } from '../../services/documentService';
 import { jamaahService } from '../../services/jamaahService';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function JamaahDokumen() {
+  const { profile } = useAuth();
+  const [jamaah, setJamaah] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [persentase, setPersentase] = useState(0);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (profile?.id) {
+      fetchData();
+    }
+  }, [profile?.id]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Assuming Jamaah ID 1
-      const jamaahId = 1;
-      const docs = await documentService.getDocumentsByJamaah(jamaahId);
+      if (!profile?.id) return;
+      const jData = await jamaahService.getMyJamaah(profile.id);
+      setJamaah(jData);
+      setPersentase(jData.dokumen_persentase);
+
+      const docs = await documentService.getDocumentsByJamaah(jData.id);
       setDocuments(docs);
-      
-      const jamaah = await jamaahService.getJamaahById(jamaahId);
-      setPersentase(jamaah.dokumen_persentase);
-      
     } catch (err) {
       console.error(err);
     } finally {
@@ -31,11 +35,12 @@ export default function JamaahDokumen() {
   };
 
   const handleUpload = async (tipe) => {
+    if (!jamaah?.id) return;
     // Mock file selection
     const mockFile = new File(['mock content'], `${tipe}.pdf`, { type: 'application/pdf' });
     
     try {
-        await documentService.uploadDocument(1, tipe, mockFile);
+        await documentService.uploadDocument(jamaah.id, tipe, mockFile);
         alert(`Dokumen ${tipe} berhasil diunggah dan menunggu verifikasi.`);
         fetchData();
     } catch (err) {
