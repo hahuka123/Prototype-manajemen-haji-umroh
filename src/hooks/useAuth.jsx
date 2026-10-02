@@ -107,6 +107,8 @@ export function AuthProvider({ children }) {
       throw new Error('Supabase belum dikonfigurasi. Harap gunakan tombol "Demo Mode" di bawah form.');
     }
 
+    localStorage.removeItem('demo_auth_user');
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -123,6 +125,8 @@ export function AuthProvider({ children }) {
     if (!isConfigured) {
       throw new Error('Supabase belum dikonfigurasi. Harap gunakan tombol "Demo Mode" di bawah form.');
     }
+
+    localStorage.removeItem('demo_auth_user');
 
     const { data, error } = await supabase.auth.signUp({
       email,

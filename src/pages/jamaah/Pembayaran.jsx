@@ -23,7 +23,10 @@ export default function JamaahPembayaran() {
           throw new Error('Profil pengguna belum tersedia.');
         }
 
+        console.log('[DEBUG] profile.id login:', profile.id);
+
         const jData = await jamaahService.getMyJamaah(profile.id);
+        console.log('[DEBUG] hasil getMyJamaah:', jData);
         setJamaah(jData);
 
         const jamaahId = jData.id;
@@ -51,7 +54,22 @@ export default function JamaahPembayaran() {
   }, [profile?.id]);
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
-  if (!jamaah) return <div className="p-8 text-center">Data Jamaah tidak ditemukan.</div>;
+  if (!jamaah) return (
+    <div className="card" style={{ margin: '24px', padding: '32px', textAlign: 'center' }}>
+      <Clock size={44} style={{ color: '#ef4444', margin: '0 auto 16px' }} />
+      <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Data Pembayaran Belum Terhubung</h3>
+      <p style={{ color: 'var(--text-muted)', marginTop: '8px', maxWidth: '600px', margin: '8px auto' }}>
+        Akun yang sedang login (ID: <code>{profile?.id}</code>) belum memiliki data jamaah yang terdaftar di database Supabase.
+      </p>
+      <div style={{ marginTop: '20px', fontSize: '0.875rem', color: 'var(--text-muted)', background: '#f8fafc', padding: '16px', borderRadius: '8px', display: 'inline-block', textAlign: 'left', lineHeight: 1.6, border: '1px solid var(--border-color)' }}>
+        <strong>Checklist Supabase:</strong><br />
+        1. Pastikan tidak login menggunakan <strong>Demo Mode</strong>.<br />
+        2. Buka Supabase Table Editor &rarr; tabel <code>jamaah</code>.<br />
+        3. Pastikan kolom <code>profile_id</code> diisi sesuai ID akun: <code>{profile?.id}</code>.<br />
+        4. Buka Console Browser (F12) untuk melihat rincian log query.
+      </div>
+    </div>
+  );
 
   const hargaPaket = jamaah.sisa_tagihan + jamaah.total_terbayar;
   const totalVerified = jamaah.total_terbayar;
