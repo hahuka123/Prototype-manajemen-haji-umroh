@@ -70,12 +70,16 @@ export const jamaahService = {
         .from('v_jamaah_billing_summary')
         .select('*')
         .eq('profile_id', profileId)
-        .single();
+        .maybeSingle();
         
-      if (error) throw error;
-      return mapJamaah(data);
+      if (error) {
+        console.warn('Gagal getMyJamaah:', error.message);
+        return null;
+      }
+      return data ? mapJamaah(data) : null;
     } catch (err) {
-      throw err;
+      console.warn('Catch getMyJamaah:', err);
+      return null;
     }
   },
 
@@ -141,5 +145,81 @@ export const jamaahService = {
   
   updateDokumenPersentase: async (id, percent) => {
       // In a real Supabase DB with views, you just fetch the view again.
+  },
+
+  checkOnboardingStatus: async (profileId) => {
+    if (!profileId || profileId === 'demo-jamaah-id-456' || (typeof profileId === 'string' && profileId.startsWith('demo-'))) {
+      return { completed: true };
+    }
+
+    try {
+      const { data: jamaahData, error } = await supabase
+        .from('jamaah')
+        .select('package_id, nik')
+        .eq('profile_id', profileId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Gagal cek status onboarding:', error.message);
+        return { completed: false, data: null };
+      }
+
+      // Jika belum ada record jamaah ATAU belum memilih paket ATAU belum ada NIK
+      const nik = jamaahData?.nik || jamaahData?.NIK;
+      if (!jamaahData || !jamaahData.package_id || !nik) {
+        return { completed: false, data: jamaahData };
+      }
+
+      return { completed: true, data: jamaahData };
+    } catch (e) {
+      console.warn('Error checkOnboardingStatus:', e);
+      return { completed: false, data: null };
+    }
+  },
+
+  saveOnboardingData: async (payload) => {
+    const { data: existing } = await supabase
+      .from('jamaah')
+      .select('id')
+      .eq('profile_id', payload.profile_id)
+      .maybeSingle();
+
+    if (existing) {
+      const { data, error } = await supabase
+        .from('jamaah')
+        .update({
+          nik: payload.nik,
+          passport_number: payload.passport_number || null,
+          gender: payload.jenis_kelamin,
+          phone: payload.no_telepon,
+          address: payload.alamat,
+          package_id: payload.paket_id || null,
+          birth_date: payload.tanggal_lahir,
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } else {
+      const { data, error } = await supabase
+        .from('jamaah')
+        .insert([{
+          profile_id: payload.profile_id,
+          nik: payload.nik,
+          passport_number: payload.passport_number || null,
+          gender: payload.jenis_kelamin,
+          phone: payload.no_telepon,
+          address: payload.alamat,
+          package_id: payload.paket_id || null,
+          birth_date: payload.tanggal_lahir,
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    }
   }
 };

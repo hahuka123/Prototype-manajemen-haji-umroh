@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import StatCard from '../../components/StatCard';
 import { CreditCard, FileCheck2, Calendar, AlertCircle, ArrowUpRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
 import { scheduleService } from '../../services/scheduleService';
@@ -12,6 +12,7 @@ import DocumentStatusBadge from '../../components/DocumentStatusBadge';
 
 export default function JamaahDashboard() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const namaJamaah = profile?.full_name || 'Jamaah';
 
   const [jamaah, setJamaah] = useState(null);
@@ -34,9 +35,19 @@ export default function JamaahDashboard() {
         // Ambil data jamaah berdasarkan profile user yang sedang login
         const jData = await jamaahService.getMyJamaah(profile.id);
         console.log('[DEBUG] hasil getMyJamaah:', jData);
+
+        // Jika akun demo, biarkan lewat
+        const isDemo = profile.id === 'demo-jamaah-id-456' || (typeof profile.id === 'string' && profile.id.startsWith('demo-'));
+
+        // Jika belum ada record jamaah ATAU belum memilih paket ATAU belum mengisi NIK
+        if (!isDemo && (!jData || !jData.paket_id || !jData.nik)) {
+          navigate('/jamaah/lengkapi-data', { replace: true });
+          return;
+        }
+
         setJamaah(jData);
 
-        const jamaahId = jData.id;
+        const jamaahId = jData?.id;
 
         if (jData.paket_id) {
           const pkgs = await packageService.getPackages();

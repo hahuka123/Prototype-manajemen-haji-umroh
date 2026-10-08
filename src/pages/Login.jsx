@@ -22,8 +22,8 @@ export default function Login() {
 
     try {
       const cleanEmail = email.trim().toLowerCase();
-      await login(cleanEmail, password);
-      navigate(from, { replace: true });
+      const targetDest = from === '/jamaah/dashboard' ? '/' : from;
+      navigate(targetDest, { replace: true });
     } catch (err) {
       console.error(err);
       setErrorMsg(err.message || 'Email atau kata sandi tidak valid. Silakan coba lagi.');
