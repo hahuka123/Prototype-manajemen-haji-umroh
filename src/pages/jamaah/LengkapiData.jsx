@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { packageService } from '../../services/packageService';
+import { supabase } from '../../services/supabase';
 import { jamaahService } from '../../services/jamaahService';
 import { 
   UserCheck, 
@@ -13,14 +13,15 @@ import {
   AlertCircle, 
   CheckCircle2, 
   ArrowRight,
-  PlaneTakeoff
+  PlaneTakeoff,
+  Package
 } from 'lucide-react';
 
 export default function JamaahLengkapiData() {
   const { user, profile, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [packages, setPackages] = useState([]);
+  const [packagesList, setPackagesList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -32,35 +33,46 @@ export default function JamaahLengkapiData() {
   const [birthDate, setBirthDate] = useState('');
   const [phone, setPhone] = useState(profile?.phone || '');
   const [address, setAddress] = useState('');
-  const [selectedPackageId, setSelectedPackageId] = useState('');
+  const [packageId, setPackageId] = useState('');
 
   useEffect(() => {
-    async function loadInitial() {
+    async function fetchPackages() {
       try {
         setLoading(true);
-        const pkgs = await packageService.getPackages();
-        setPackages(pkgs);
-        if (pkgs.length > 0) {
-          setSelectedPackageId(pkgs[0].id);
+        // Mengambil data paket asli (UUID) dari tabel packages Supabase
+        const { data, error } = await supabase
+          .from('packages')
+          .select('id, name, price, type, departure_date, duration')
+          .order('departure_date', { ascending: true });
+
+        if (error) {
+          console.error('Gagal memuat paket dari Supabase:', error.message);
+        } else if (data) {
+          setPackagesList(data);
         }
 
-        // Ambil data jamaah jika sudah ada sebagian
-        if (profile?.id) {
-          const status = await jamaahService.checkOnboardingStatus(profile.id);
-          if (status.data) {
-            if (status.data.nik) setNik(status.data.nik);
-            if (status.data.package_id) setSelectedPackageId(status.data.package_id);
+        // Ambil data jamaah jika sudah ada sebagian di DB
+        if (profile?.id || user?.id) {
+          const status = await jamaahService.checkOnboardingStatus(profile?.id || user?.id);
+          if (status?.data) {
+            if (status.data.nik || status.data.NIK) setNik(status.data.nik || status.data.NIK);
+            if (status.data.package_id) setPackageId(status.data.package_id);
+            if (status.data.gender) setGender(status.data.gender);
+            if (status.data.birth_date) setBirthDate(status.data.birth_date);
+            if (status.data.phone) setPhone(status.data.phone);
+            if (status.data.address) setAddress(status.data.address);
+            if (status.data.passport_number) setPassportNumber(status.data.passport_number);
           }
         }
       } catch (err) {
-        console.error('Gagal memuat data paket:', err);
+        console.error('Error saat fetch packages:', err);
       } finally {
         setLoading(false);
       }
     }
 
-    loadInitial();
-  }, [profile?.id]);
+    fetchPackages();
+  }, [profile?.id, user?.id]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -73,7 +85,7 @@ export default function JamaahLengkapiData() {
       return;
     }
 
-    if (!selectedPackageId) {
+    if (!packageId) {
       setErrorMsg('Silakan pilih salah satu paket ibadah yang ingin Anda ikuti.');
       return;
     }
@@ -103,7 +115,7 @@ export default function JamaahLengkapiData() {
         tanggal_lahir: birthDate,
         no_telepon: phone.trim(),
         alamat: address.trim(),
-        paket_id: selectedPackageId,
+        paket_id: packageId,
       };
 
       await jamaahService.saveOnboardingData(payload);
@@ -295,50 +307,89 @@ export default function JamaahLengkapiData() {
               2. Pilih Paket Perjalanan Ibadah
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '32px' }}>
-              {packages.map((pkg) => {
-                const isSelected = selectedPackageId === pkg.id;
-                const pkgName = pkg.nama || pkg.name;
-                const pkgPrice = pkg.harga || pkg.price;
-                const pkgDuration = pkg.durasi_hari || pkg.duration;
-                const pkgDepDate = pkg.tanggal_keberangkatan || pkg.departure_date;
+            {/* Dropdown Pemilihan Paket sesuai panduan */}
+            <div className="form-group" style={{ marginBottom: '24px' }}>
+              <label className="form-label" htmlFor="packageSelect" style={{ fontWeight: 600 }}>
+                Pilihan Paket Ibadah <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <select
+                id="packageSelect"
+                className="form-select"
+                value={packageId}
+                onChange={(e) => setPackageId(e.target.value)}
+                required
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1.5px solid var(--border-color)',
+                  fontSize: '1rem',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">-- Pilih Paket Ibadah --</option>
+                {packagesList.map((pkg) => (
+                  <option key={pkg.id} value={pkg.id}>
+                    {pkg.name || pkg.nama} - Rp {Number(pkg.price || pkg.harga || 0).toLocaleString('id-ID')}
+                  </option>
+                ))}
+              </select>
 
-                return (
-                  <div
-                    key={pkg.id}
-                    onClick={() => setSelectedPackageId(pkg.id)}
-                    style={{
-                      border: isSelected ? '2px solid var(--primary-600)' : '1px solid var(--border-color)',
-                      background: isSelected ? 'var(--primary-50)' : '#fff',
-                      borderRadius: 'var(--radius-lg)',
-                      padding: '20px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      position: 'relative'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                      <span className="status-badge" style={{ backgroundColor: 'var(--primary-100)', color: 'var(--primary-800)', fontWeight: 600 }}>
-                        {pkg.tipe || pkg.type || 'Paket Ibadah'}
-                      </span>
-                      {isSelected && (
-                        <CheckCircle2 size={22} color="var(--primary-600)" />
-                      )}
-                    </div>
-                    <h4 style={{ fontSize: '1.1rem', margin: '4px 0 8px', color: 'var(--text-main)' }}>
-                      {pkgName}
-                    </h4>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary-700)', marginBottom: '12px' }}>
-                      Rp {Number(pkgPrice || 0).toLocaleString('id-ID')}
-                    </div>
-                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <span>📅 Berangkat: {pkgDepDate ? new Date(pkgDepDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</span>
-                      <span>⏱️ Durasi: {pkgDuration || '-'} Hari</span>
-                    </div>
-                  </div>
-                );
-              })}
+              {packagesList.length === 0 && (
+                <div style={{ marginTop: '10px', padding: '12px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', color: '#92400e', fontSize: '0.88rem' }}>
+                  ⚠️ Belum ada paket perjalanan ibadah yang terdaftar di database Supabase. Silakan hubungi admin biro untuk menambahkan paket terlebih dahulu.
+                </div>
+              )}
             </div>
+
+            {/* Visual Card List untuk kemudahan memilih */}
+            {packagesList.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+                {packagesList.map((pkg) => {
+                  const isSelected = packageId === pkg.id;
+                  const pkgName = pkg.name || pkg.nama;
+                  const pkgPrice = pkg.price || pkg.harga;
+                  const pkgDuration = pkg.duration || pkg.durasi_hari;
+                  const pkgDepDate = pkg.departure_date || pkg.tanggal_keberangkatan;
+
+                  return (
+                    <div
+                      key={pkg.id}
+                      onClick={() => setPackageId(pkg.id)}
+                      style={{
+                        border: isSelected ? '2px solid var(--primary-600)' : '1px solid var(--border-color)',
+                        background: isSelected ? 'var(--primary-50)' : '#fff',
+                        borderRadius: 'var(--radius-lg)',
+                        padding: '18px',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        position: 'relative'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <span className="status-badge" style={{ backgroundColor: 'var(--primary-100)', color: 'var(--primary-800)', fontWeight: 600 }}>
+                          {pkg.type || pkg.tipe || 'Paket Ibadah'}
+                        </span>
+                        {isSelected && (
+                          <CheckCircle2 size={22} color="var(--primary-600)" />
+                        )}
+                      </div>
+                      <h4 style={{ fontSize: '1.05rem', margin: '4px 0 8px', color: 'var(--text-main)' }}>
+                        {pkgName}
+                      </h4>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--primary-700)', marginBottom: '10px' }}>
+                        Rp {Number(pkgPrice || 0).toLocaleString('id-ID')}
+                      </div>
+                      <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span>📅 Berangkat: {pkgDepDate ? new Date(pkgDepDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</span>
+                        <span>⏱️ Durasi: {pkgDuration || '-'} Hari</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
               <button
