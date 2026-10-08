@@ -1,11 +1,13 @@
 # PRODUCT REQUIREMENTS DOCUMENT (PRD)
 
-**Pengembangan Prototipe Aplikasi Haji dan Umrah untuk Manajemen Jamaah, Dokumen, Pembayaran, dan Jadwal Perjalanan**
+**Prototipe Sistem Manajemen Haji & Umrah**  
+*Manajemen Jamaah, Dokumen, Pembayaran, dan Jadwal Perjalanan*
 
-- **Versi**: 2.0
-- **Status**: Final Draft
-- **Platform**: Web Application (Responsive Desktop & Mobile)
-- **Target Pengguna**: Admin/Petugas Biro Travel dan Jamaah
+- **Versi**: 3.0 (Disusun berdasarkan source code dan dokumen kerja terbaru)
+- **Status**: Dokumen kerja untuk perbaikan dan penyelesaian prototype
+- **Teknologi**: Antigravity • React + Vite • Supabase • GitHub • Vercel
+- **Platform**: Web Application (Responsive Desktop, Tablet, & Mobile)
+- **Target Pengguna**: Admin/Petugas Biro Perjalanan dan Jamaah
 
 ---
 

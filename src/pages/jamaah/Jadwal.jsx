@@ -1,50 +1,108 @@
 import React, { useState, useEffect } from 'react';
 import { scheduleService } from '../../services/scheduleService';
 import { packageService } from '../../services/packageService';
+import { jamaahService } from '../../services/jamaahService';
+import { useAuth } from '../../hooks/useAuth';
 import { 
   Calendar, 
   Clock, 
   MapPin, 
   Info, 
   Search, 
-  Compass,
-  AlertCircle
+  Compass, 
+  AlertCircle 
 } from 'lucide-react';
 
 export default function JamaahJadwal() {
+  const { profile } = useAuth();
+  const [jamaah, setJamaah] = useState(null);
   const [packageData, setPackageData] = useState(null);
   const [schedules, setSchedules] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Jamaah saat ini terdaftar pada paket pkg-1 (Umrah Reguler)
-  const currentPackageId = 'pkg-1';
-
   async function loadData() {
     setLoading(true);
     try {
-      const [pkg, schs] = await Promise.all([
-        packageService.getById(currentPackageId),
-        scheduleService.getByPackage(currentPackageId)
-      ]);
-      setPackageData(pkg);
-      setSchedules(schs);
+      if (!profile?.id) return;
+      const jData = await jamaahService.getMyJamaah(profile.id);
+      setJamaah(jData);
+
+      if (jData?.paket_id) {
+        const [pkg, schs] = await Promise.all([
+          packageService.getById(jData.paket_id),
+          scheduleService.getByPackage(jData.paket_id)
+        ]);
+        setPackageData(pkg);
+        setSchedules(schs || []);
+      } else {
+        setPackageData(null);
+        setSchedules([]);
+      }
     } catch (e) {
-      console.error(e);
+      console.error('Gagal memuat jadwal jamaah:', e);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (profile?.id) {
+      loadData();
+    }
+  }, [profile?.id]);
 
   const filtered = schedules.filter(s => 
-    s.activity.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (s.activity && s.activity.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (s.location && s.location.toLowerCase().includes(searchQuery.toLowerCase())) ||
     (s.description && s.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  if (loading) {
+    return <div className="p-8 text-center">Memuat jadwal kegiatan ibadah...</div>;
+  }
+
+  if (!jamaah) {
+    return (
+      <div className="card" style={{ margin: '24px', padding: '32px', textAlign: 'center' }}>
+        <AlertCircle size={44} style={{ color: '#ef4444', margin: '0 auto 16px' }} />
+        <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Data Jamaah Belum Terhubung</h3>
+        <p style={{ color: 'var(--text-muted)', marginTop: '8px', maxWidth: '600px', margin: '8px auto' }}>
+          Akun yang sedang login (ID: <code>{profile?.id}</code>) belum memiliki data jamaah yang terdaftar di database Supabase.
+        </p>
+        <div style={{ marginTop: '20px', fontSize: '0.875rem', color: 'var(--text-muted)', background: '#f8fafc', padding: '16px', borderRadius: '8px', display: 'inline-block', textAlign: 'left', lineHeight: 1.6, border: '1px solid var(--border-color)' }}>
+          <strong>Checklist Supabase:</strong><br />
+          1. Pastikan tidak login menggunakan <strong>Demo Mode</strong>.<br />
+          2. Buka Supabase Table Editor &rarr; tabel <code>jamaah</code>.<br />
+          3. Pastikan kolom <code>profile_id</code> diisi sesuai ID akun: <code>{profile?.id}</code>.<br />
+        </div>
+      </div>
+    );
+  }
+
+  if (!jamaah.paket_id || !packageData) {
+    return (
+      <div>
+        <div className="page-header">
+          <div className="page-header-title">
+            <h1>Jadwal & Agenda Perjalanan Ibadah</h1>
+            <p>Rangkaian itinerary harian perjalanan ibadah khusus untuk paket yang Anda ikuti.</p>
+          </div>
+        </div>
+        <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+          <Calendar size={44} color="var(--primary-600)" style={{ margin: '0 auto 12px' }} />
+          <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Belum Terdaftar pada Paket Perjalanan</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '500px', margin: '8px auto' }}>
+            Data Anda belum terhubung dengan paket haji atau umroh. Hubungi admin biro untuk menentukan paket keberangkatan agar jadwal itinerary dapat ditampilkan.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const packageName = packageData.name || packageData.nama || 'Paket Perjalanan';
+  const depDate = packageData.departure_date || packageData.tanggal_keberangkatan;
+  const durationDays = packageData.duration || packageData.durasi_hari || '-';
 
   return (
     <div>
@@ -56,35 +114,33 @@ export default function JamaahJadwal() {
       </div>
 
       {/* Info Paket Banner */}
-      {packageData && (
-        <div className="card" style={{ marginBottom: '24px', background: 'linear-gradient(135deg, #064e3b, #022c22)', color: '#fff' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-            <div>
-              <div style={{ fontSize: '0.8rem', color: '#a7f3d0', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
-                Paket Anda Terdaftar
-              </div>
-              <h2 style={{ color: '#fff', margin: '4px 0 6px', fontSize: '1.4rem' }}>
-                {packageData.name}
-              </h2>
-              <div style={{ display: 'flex', gap: '18px', fontSize: '0.86rem', color: 'rgba(255,255,255,0.85)', flexWrap: 'wrap' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Calendar size={15} color="#6ee7b7" />
-                  Keberangkatan: <strong>{new Date(packageData.departure_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Clock size={15} color="#6ee7b7" />
-                  Durasi: <strong>{packageData.duration} Hari</strong>
-                </span>
-              </div>
+      <div className="card" style={{ marginBottom: '24px', background: 'linear-gradient(135deg, #064e3b, #022c22)', color: '#fff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: '#a7f3d0', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
+              Paket Anda Terdaftar
             </div>
-
-            <div style={{ background: 'rgba(255,255,255,0.1)', padding: '10px 18px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.2)' }}>
-              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#a7f3d0' }}>Status Paket</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>Penerbangan Terjadwal</div>
+            <h2 style={{ color: '#fff', margin: '4px 0 6px', fontSize: '1.4rem' }}>
+              {packageName}
+            </h2>
+            <div style={{ display: 'flex', gap: '18px', fontSize: '0.86rem', color: 'rgba(255,255,255,0.85)', flexWrap: 'wrap' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Calendar size={15} color="#6ee7b7" />
+                Keberangkatan: <strong>{depDate ? new Date(depDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</strong>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Clock size={15} color="#6ee7b7" />
+                Durasi: <strong>{durationDays} Hari</strong>
+              </span>
             </div>
           </div>
+
+          <div style={{ background: 'rgba(255,255,255,0.1)', padding: '10px 18px', borderRadius: 'var(--radius-md)', border: '1px solid rgba(255,255,255,0.2)' }}>
+            <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#a7f3d0' }}>Status Paket</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>Penerbangan Terjadwal</div>
+          </div>
         </div>
-      )}
+      </div>
 
       {/* Notice Card */}
       <div style={{

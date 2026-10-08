@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Upload, CheckCircle2, Clock, XCircle, AlertCircle, FileText } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Upload, CheckCircle2, Clock, XCircle, AlertCircle, FileText, Eye, Loader2 } from 'lucide-react';
 import { documentService } from '../../services/documentService';
 import { jamaahService } from '../../services/jamaahService';
 import { useAuth } from '../../hooks/useAuth';
@@ -10,6 +10,9 @@ export default function JamaahDokumen() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [persentase, setPersentase] = useState(0);
+  const [uploadingTipe, setUploadingTipe] = useState(null);
+  const [activeTipe, setActiveTipe] = useState(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (profile?.id) {
@@ -34,22 +37,68 @@ export default function JamaahDokumen() {
     }
   };
 
-  const handleUpload = async (tipe) => {
-    if (!jamaah?.id) return;
-    // Mock file selection
-    const mockFile = new File(['mock content'], `${tipe}.pdf`, { type: 'application/pdf' });
-    
+  const handleTriggerUpload = (tipe) => {
+    if (!jamaah?.id) {
+      alert('Data jamaah belum terhubung dengan akun login Anda.');
+      return;
+    }
+    setActiveTipe(tipe);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !activeTipe || !jamaah?.id) return;
+
+    // Validasi tipe file
+    const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+    if (!allowedTypes.includes(file.type)) {
+      alert('Format file tidak didukung. Harap unggah berkas PDF, JPG, atau PNG.');
+      return;
+    }
+
+    // Validasi ukuran file (maksimal 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Ukuran berkas melebihi batas 5MB. Silakan kompres atau pilih berkas lain.');
+      return;
+    }
+
     try {
-        await documentService.uploadDocument(jamaah.id, tipe, mockFile);
-        alert(`Dokumen ${tipe} berhasil diunggah dan menunggu verifikasi.`);
-        fetchData();
+      setUploadingTipe(activeTipe);
+      await documentService.uploadDocument(jamaah.id, activeTipe, file);
+      alert(`Berkas ${activeTipe.replace('-', ' ')} berhasil diunggah dan masuk antrean verifikasi.`);
+      await fetchData();
     } catch (err) {
-        alert(err.message);
+      console.error(err);
+      alert('Gagal mengunggah berkas: ' + (err.message || 'Terjadi kesalahan sistem'));
+    } finally {
+      setUploadingTipe(null);
+      setActiveTipe(null);
     }
   };
 
   const totalWajib = 6;
   const totalLengkap = documents.filter(d => d.status === 'Lengkap').length;
+
+  if (loading) return <div className="p-8 text-center">Loading dokumen...</div>;
+  if (!jamaah) return (
+    <div className="card" style={{ margin: '24px', padding: '32px', textAlign: 'center' }}>
+      <AlertCircle size={44} style={{ color: '#ef4444', margin: '0 auto 16px' }} />
+      <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Data Jamaah Belum Terhubung</h3>
+      <p style={{ color: 'var(--text-muted)', marginTop: '8px', maxWidth: '600px', margin: '8px auto' }}>
+        Akun yang sedang login (ID: <code>{profile?.id}</code>) belum memiliki data jamaah yang terdaftar di database Supabase.
+      </p>
+      <div style={{ marginTop: '20px', fontSize: '0.875rem', color: 'var(--text-muted)', background: '#f8fafc', padding: '16px', borderRadius: '8px', display: 'inline-block', textAlign: 'left', lineHeight: 1.6, border: '1px solid var(--border-color)' }}>
+        <strong>Checklist Supabase:</strong><br />
+        1. Pastikan tidak login menggunakan <strong>Demo Mode</strong>.<br />
+        2. Buka Supabase Table Editor &rarr; tabel <code>jamaah</code>.<br />
+        3. Pastikan kolom <code>profile_id</code> diisi sesuai ID akun: <code>{profile?.id}</code>.<br />
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -59,6 +108,15 @@ export default function JamaahDokumen() {
           <p>Pantau kelengkapan berkas fisik dan digital persyaratan pendaftaran haji/umroh Anda.</p>
         </div>
       </div>
+
+      {/* Hidden File Input */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        accept="image/jpeg,image/png,application/pdf"
+        style={{ display: 'none' }} 
+      />
 
       {/* Progress Card Persentase Kelengkapan */}
       <div className="card" style={{ marginBottom: '24px' }}>
@@ -101,9 +159,7 @@ export default function JamaahDokumen() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center' }}>Loading...</td></tr>
-              ) : documents.length === 0 ? (
+              {documents.length === 0 ? (
                   <tr><td colSpan="6" style={{ textAlign: 'center' }}>Tidak ada dokumen.</td></tr>
               ) : (
                   documents.map((doc, idx) => (
@@ -119,14 +175,39 @@ export default function JamaahDokumen() {
                         <td>{doc.updated_at ? new Date(doc.updated_at).toLocaleDateString('id-ID') : '-'}</td>
                         <td style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{doc.catatan || '-'}</td>
                         <td>
-                          <button 
-                            className="btn btn-secondary btn-sm" 
-                            style={{ display: 'inline-flex', gap: '6px' }}
-                            onClick={() => handleUpload(doc.tipe)}
-                          >
-                            <Upload size={14} />
-                            <span>{doc.status === 'Belum Ada' ? 'Upload' : 'Ganti File'}</span>
-                          </button>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {doc.url && (
+                              <a 
+                                href={doc.url} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="btn btn-secondary btn-sm"
+                                style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}
+                                title="Lihat Berkas"
+                              >
+                                <Eye size={14} />
+                                <span>Lihat</span>
+                              </a>
+                            )}
+                            <button 
+                              className="btn btn-primary btn-sm" 
+                              style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}
+                              onClick={() => handleTriggerUpload(doc.tipe)}
+                              disabled={uploadingTipe === doc.tipe}
+                            >
+                              {uploadingTipe === doc.tipe ? (
+                                <>
+                                  <Loader2 size={14} className="animate-spin" />
+                                  <span>Mengunggah...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Upload size={14} />
+                                  <span>{doc.status === 'Belum Ada' ? 'Upload Berkas' : 'Ganti File'}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                   ))

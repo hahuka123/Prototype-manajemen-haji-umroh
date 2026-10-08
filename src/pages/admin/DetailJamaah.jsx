@@ -157,7 +157,11 @@ export default function AdminDetailJamaah() {
                                     <button className="btn btn-secondary btn-sm" onClick={() => navigate('/admin/dokumen')}>Verifikasi di Antrean</button>
                                 )}
                                 {doc.status !== 'Belum Ada' && doc.status !== 'Menunggu Verifikasi' && (
-                                     <button className="btn btn-secondary btn-sm">Lihat</button>
+                                     doc.url ? (
+                                       <a href={doc.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm">Lihat</a>
+                                     ) : (
+                                       <button className="btn btn-secondary btn-sm" disabled>Lihat</button>
+                                     )
                                 )}
                             </td>
                         </tr>

@@ -83,7 +83,13 @@ export default function AdminDokumen() {
                         <td style={{ textTransform: 'capitalize' }}>{doc.tipe.replace('-', ' ')}</td>
                         <td>{doc.updated_at ? new Date(doc.updated_at).toLocaleDateString('id-ID') : '-'}</td>
                         <td>
-                          <a href={doc.url || '#'} className="btn btn-secondary btn-sm" style={{ display: 'inline-flex', gap: '4px' }}>
+                          <a 
+                            href={doc.url || '#'} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="btn btn-secondary btn-sm" 
+                            style={{ display: 'inline-flex', gap: '4px' }}
+                          >
                             <FileText size={14} /> Lihat File
                           </a>
                         </td>
