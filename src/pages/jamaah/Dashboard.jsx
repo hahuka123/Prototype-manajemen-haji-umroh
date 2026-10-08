@@ -8,6 +8,7 @@ import { packageService } from '../../services/packageService';
 import { scheduleService } from '../../services/scheduleService';
 import { documentService } from '../../services/documentService';
 import { paymentService } from '../../services/paymentService';
+import DocumentStatusBadge from '../../components/DocumentStatusBadge';
 
 export default function JamaahDashboard() {
   const { profile } = useAuth();
@@ -125,11 +126,14 @@ export default function JamaahDashboard() {
       ktp: 'KTP',
       kk: 'Kartu Keluarga',
       paspor: 'Paspor Asli',
+      passport: 'Paspor Asli',
       buku_kuning: 'Buku Kuning / Vaksin',
       foto: 'Pas Foto',
-      surat_kesehatan: 'Surat Kesehatan'
+      'buku-nikah': 'Buku Nikah',
+      surat_kesehatan: 'Surat Kesehatan',
+      kesehatan: 'Surat Kesehatan'
     };
-    return map[type] || type;
+    return map[type] || type || '-';
   };
 
   const hargaPaket = jamaah.total_terbayar + jamaah.sisa_tagihan;
@@ -165,11 +169,11 @@ export default function JamaahDashboard() {
           <AlertCircle size={22} style={{ flexShrink: 0 }} />
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-              Pembayaran {p.status === 'rejected' ? 'Ditolak' : 'Menunggu Verifikasi'}: Rp {p.nominal.toLocaleString('id-ID')}
+              Pembayaran {p.status === 'rejected' ? 'Ditolak' : 'Menunggu Verifikasi'}: Rp {Number(p.nominal || p.amount || 0).toLocaleString('id-ID')}
             </div>
             <div style={{ fontSize: '0.8rem', opacity: 0.9 }}>
               {p.status === 'rejected'
-                ? `Pembayaran Anda ditolak admin. Alasan: ${p.catatan_admin}. Silakan upload ulang.`
+                ? `Pembayaran Anda ditolak admin. Alasan: ${p.catatan_admin || '-'}. Silakan upload ulang.`
                 : 'Bukti transfer Anda telah dikirim dan sedang dalam antrean verifikasi oleh petugas biro.'
               }
             </div>
@@ -203,7 +207,7 @@ export default function JamaahDashboard() {
         <StatCard
           title="Kelengkapan Berkas"
           value={`${Math.round(jamaah.dokumen_persentase)}%`}
-          subtext={`${documents.filter(d => d.status === 'verified').length} dari 6 dokumen lengkap`}
+          subtext={`${documents.filter(d => d.status === 'verified' || d.status === 'Lengkap').length} dari 6 dokumen lengkap`}
           icon={<FileCheck2 size={24} />}
           variant="accent"
         />
@@ -216,22 +220,22 @@ export default function JamaahDashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Nama Paket:</span>
-              <span style={{ fontWeight: 600 }}>{paket ? paket.nama : '-'}</span>
+              <span style={{ fontWeight: 600 }}>{paket ? (paket.nama || paket.name) : '-'}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Durasi:</span>
-              <span style={{ fontWeight: 600 }}>{paket ? `${paket.durasi_hari} Hari` : '-'}</span>
+              <span style={{ fontWeight: 600 }}>{paket ? `${paket.durasi_hari || paket.duration || '-'} Hari` : '-'}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Tanggal Keberangkatan:</span>
               <span style={{ fontWeight: 600, color: 'var(--primary-700)' }}>
-                {jadwal ? new Date(jadwal.tanggal_keberangkatan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                {jadwal?.tanggal_keberangkatan || jadwal?.date ? new Date(jadwal.tanggal_keberangkatan || jadwal.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Tanggal Kepulangan:</span>
               <span style={{ fontWeight: 600 }}>
-                {jadwal ? new Date(jadwal.tanggal_kepulangan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                {jadwal?.tanggal_kepulangan ? new Date(jadwal.tanggal_kepulangan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
               </span>
             </div>
           </div>
@@ -251,7 +255,7 @@ export default function JamaahDashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {documents.slice(0, 3).map(doc => (
               <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.88rem' }}>{getDocName(doc.jenis_dokumen)}</span>
+                <span style={{ fontSize: '0.88rem' }}>{getDocName(doc.tipe || doc.jenis_dokumen)}</span>
                 <DocumentStatusBadge status={doc.status} />
               </div>
             ))}
