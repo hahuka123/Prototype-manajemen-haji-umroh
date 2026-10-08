@@ -4,6 +4,15 @@ import { jamaahService } from './jamaahService';
 const REQUIRED_DOCUMENTS = ['ktp', 'kk', 'passport', 'foto', 'buku-nikah', 'kesehatan'];
 const DOCUMENTS_BUCKET = 'documents';
 
+const DEMO_DOCUMENTS = [
+  { id: 'demo-doc-1', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'ktp', status: 'Lengkap', catatan: 'KTP jelas dan terverifikasi.', url: null, updated_at: '2026-09-10' },
+  { id: 'demo-doc-2', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'kk', status: 'Lengkap', catatan: 'Kartu Keluarga terverifikasi.', url: null, updated_at: '2026-09-10' },
+  { id: 'demo-doc-3', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'passport', status: 'Lengkap', catatan: 'Paspor aktif (masa berlaku > 12 bulan).', url: null, updated_at: '2026-09-12' },
+  { id: 'demo-doc-4', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'foto', status: 'Lengkap', catatan: 'Pas foto 4x6 latar putih 80% wajah.', url: null, updated_at: '2026-09-12' },
+  { id: 'demo-doc-5', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'buku-nikah', status: 'Menunggu Verifikasi', catatan: '', url: null, updated_at: '2026-09-28' },
+  { id: 'demo-doc-6', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'kesehatan', status: 'Belum Ada', catatan: '', url: null, updated_at: null },
+];
+
 export const documentService = {
   // Generate signed URL for private document access (300 seconds)
   getDocumentUrl: async (pathOrUrl) => {
@@ -35,45 +44,56 @@ export const documentService = {
 
   // Get all documents for a jamaah
   getDocumentsByJamaah: async (jamaahId) => {
-    const { data, error } = await supabase
-        .from('documents')
-        .select('*')
-        .eq('jamaah_id', jamaahId);
-        
-    if (error) throw error;
-    
-    const docs = data || [];
-    
-    // Fill missing docs with 'Belum Ada' for the UI and generate signed URLs
-    const fullDocs = await Promise.all(REQUIRED_DOCUMENTS.map(async (tipe) => {
-      const existing = docs.find(d => d.document_type === tipe);
-      if (existing) {
-          let signedUrl = null;
-          if (existing.file_path) {
-            signedUrl = await documentService.getDocumentUrl(existing.file_path);
-          }
-          return {
-              id: existing.id,
-              jamaah_id: existing.jamaah_id,
-              tipe: existing.document_type,
-              status: existing.status,
-              catatan: existing.notes || '',
-              url: signedUrl,
-              file_path: existing.file_path,
-              updated_at: existing.updated_at
-          };
+    if (jamaahId === 'demo-jamaah-uuid-001' || jamaahId === 'demo-jamaah-id-456' || (typeof jamaahId === 'string' && jamaahId.startsWith('demo-'))) {
+      return DEMO_DOCUMENTS;
+    }
+
+    try {
+      const { data, error } = await supabase
+          .from('documents')
+          .select('*')
+          .eq('jamaah_id', jamaahId);
+          
+      if (error) throw error;
+      
+      const docs = data || [];
+      
+      // Fill missing docs with 'Belum Ada' for the UI and generate signed URLs
+      const fullDocs = await Promise.all(REQUIRED_DOCUMENTS.map(async (tipe) => {
+        const existing = docs.find(d => d.document_type === tipe);
+        if (existing) {
+            let signedUrl = null;
+            if (existing.file_path) {
+              signedUrl = await documentService.getDocumentUrl(existing.file_path);
+            }
+            return {
+                id: existing.id,
+                jamaah_id: existing.jamaah_id,
+                tipe: existing.document_type,
+                status: existing.status,
+                catatan: existing.notes || '',
+                url: signedUrl,
+                file_path: existing.file_path,
+                updated_at: existing.updated_at
+            };
+        }
+        return {
+          id: `empty-${tipe}`,
+          jamaah_id: jamaahId,
+          tipe: tipe,
+          status: 'Belum Ada',
+          catatan: '',
+          url: null
+        };
+      }));
+      
+      return fullDocs;
+    } catch (e) {
+      if (typeof jamaahId === 'string' && jamaahId.startsWith('demo-')) {
+        return DEMO_DOCUMENTS;
       }
-      return {
-        id: `empty-${tipe}`,
-        jamaah_id: jamaahId,
-        tipe: tipe,
-        status: 'Belum Ada',
-        catatan: '',
-        url: null
-      };
-    }));
-    
-    return fullDocs;
+      throw e;
+    }
   },
 
   // Upload a document (Jamaah)

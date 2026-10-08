@@ -70,6 +70,27 @@ export default function JamaahDashboard() {
     }
   }, [profile?.id]);
 
+  const handleAutoRegisterJamaah = async () => {
+    try {
+      setLoading(true);
+      await jamaahService.addJamaah({
+        profile_id: profile.id,
+        nik: '3201' + Math.floor(100000000000 + Math.random() * 900000000000),
+        jenis_kelamin: 'Laki-laki',
+        no_telepon: profile.phone || '081234567890',
+        alamat: 'Indonesia',
+        paket_id: null,
+        tanggal_lahir: '1990-01-01',
+      });
+      alert('Data jamaah berhasil dibuat dan dihubungkan ke akun Anda!');
+      window.location.reload();
+    } catch (e) {
+      console.error(e);
+      alert('Gagal menghubungkan data: ' + (e.message || 'Pastikan RLS dan tabel Supabase sudah terkonfigurasi.'));
+      setLoading(false);
+    }
+  };
+
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (!jamaah) return (
     <div className="card" style={{ margin: '24px', padding: '32px', textAlign: 'center' }}>
@@ -78,9 +99,20 @@ export default function JamaahDashboard() {
       <p style={{ color: 'var(--text-muted)', marginTop: '8px', maxWidth: '600px', margin: '8px auto' }}>
         Akun yang sedang login (ID: <code>{profile?.id}</code>) belum memiliki data jamaah yang terdaftar di database Supabase.
       </p>
+
+      <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+        <button 
+          className="btn btn-primary"
+          onClick={handleAutoRegisterJamaah}
+          style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}
+        >
+          <span>+ Hubungkan & Buat Data Jamaah Sekarang</span>
+        </button>
+      </div>
+
       <div style={{ marginTop: '20px', fontSize: '0.875rem', color: 'var(--text-muted)', background: '#f8fafc', padding: '16px', borderRadius: '8px', display: 'inline-block', textAlign: 'left', lineHeight: 1.6, border: '1px solid var(--border-color)' }}>
         <strong>Checklist Supabase:</strong><br />
-        1. Pastikan tidak login menggunakan <strong>Demo Mode</strong>.<br />
+        1. Jika menguji prototipe instan, gunakan <strong>Mode Demo</strong>.<br />
         2. Buka Supabase Table Editor &rarr; tabel <code>jamaah</code>.<br />
         3. Pastikan kolom <code>profile_id</code> diisi sesuai ID akun: <code>{profile?.id}</code>.<br />
         4. Buka Console Browser (F12) untuk melihat rincian log query.
