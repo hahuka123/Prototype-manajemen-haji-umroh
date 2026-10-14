@@ -44,27 +44,34 @@ const DEMO_JAMAAH = {
 };
 
 export const jamaahService = {
+  // Mengambil seluruh data jamaah untuk Admin
   getJamaah: async () => {
     try {
       const { data, error } = await supabase
         .from('v_jamaah_billing_summary')
         .select('*');
-      if (error) throw error;
+      if (error) {
+        console.error('[jamaahService] getJamaah error:', error.message);
+        throw error;
+      }
       
-      const mapped = (data || []).map(mapJamaah);
-      return mapped.length > 0 ? mapped : [DEMO_JAMAAH];
+      return (data || []).map(mapJamaah);
     } catch (e) {
-      return [DEMO_JAMAAH];
+      console.error('[jamaahService] Gagal memuat data jamaah:', e);
+      throw e;
     }
   },
 
+  // Mengambil data jamaah milik akun yang sedang login
   getMyJamaah: async (profileId) => {
-    // 1. Dukungan instan untuk akun demo
-    if (profileId === 'demo-jamaah-id-456' || (typeof profileId === 'string' && profileId.startsWith('demo-'))) {
+    if (!profileId) return null;
+
+    // Dukungan instan HANYA jika akun demo aktif
+    if (typeof profileId === 'string' && profileId.startsWith('demo-')) {
       return { ...DEMO_JAMAAH, profile_id: profileId };
     }
 
-    // 2. Akun riil Supabase
+    // Akun riil Supabase
     try {
       const { data, error } = await supabase
         .from('v_jamaah_billing_summary')
@@ -73,18 +80,19 @@ export const jamaahService = {
         .maybeSingle();
         
       if (error) {
-        console.warn('Gagal getMyJamaah:', error.message);
-        return null;
+        console.error('[jamaahService] Gagal getMyJamaah:', error.message);
+        throw error;
       }
       return data ? mapJamaah(data) : null;
     } catch (err) {
-      console.warn('Catch getMyJamaah:', err);
-      return null;
+      console.error('[jamaahService] Exception getMyJamaah:', err);
+      throw err;
     }
   },
 
+  // Mengambil detail 1 jamaah berdasarkan ID
   getJamaahById: async (id) => {
-    if (id === 'demo-jamaah-uuid-001' || id === 'demo-jamaah-id-456' || id === 1 || id === '1' || (typeof id === 'string' && id.startsWith('demo-'))) {
+    if (typeof id === 'string' && id.startsWith('demo-')) {
       return DEMO_JAMAAH;
     }
 
@@ -97,25 +105,24 @@ export const jamaahService = {
       if (error) throw error;
       return mapJamaah(data);
     } catch (err) {
-      if (typeof id === 'string' && id.startsWith('demo-')) {
-        return DEMO_JAMAAH;
-      }
+      console.error('[jamaahService] getJamaahById error:', err);
       throw err;
     }
   },
 
+  // Mendaftarkan jamaah baru
   addJamaah: async (payload) => {
     const { data, error } = await supabase
       .from('jamaah')
       .insert([{
         profile_id: payload.profile_id,
         nik: payload.nik,
-        passport_number: payload.nomor_paspor || null,
-        gender: payload.jenis_kelamin,
-        phone: payload.no_telepon,
-        address: payload.alamat,
-        package_id: payload.paket_id || null,
-        birth_date: payload.tanggal_lahir,
+        passport_number: payload.nomor_paspor || payload.passport_number || null,
+        gender: payload.jenis_kelamin || payload.gender,
+        phone: payload.no_telepon || payload.phone,
+        address: payload.alamat || payload.address,
+        package_id: payload.paket_id || payload.package_id || null,
+        birth_date: payload.tanggal_lahir || payload.birth_date,
       }])
       .select()
       .single();
@@ -123,6 +130,7 @@ export const jamaahService = {
     return data;
   },
 
+  // Update data jamaah
   updateJamaah: async (id, payload) => {
     const { data, error } = await supabase
       .from('jamaah')
@@ -134,6 +142,7 @@ export const jamaahService = {
     return data;
   },
 
+  // Hapus data jamaah
   deleteJamaah: async (id) => {
     const { error } = await supabase
       .from('jamaah')
@@ -144,58 +153,71 @@ export const jamaahService = {
   },
   
   updateDokumenPersentase: async (id, percent) => {
-      // In a real Supabase DB with views, you just fetch the view again.
+    // Pada arsitektur dengan SQL View, persentase dihitung otomatis real-time
   },
 
+  // Cek apakah data onboarding jamaah sudah selesai diisi
   checkOnboardingStatus: async (profileId) => {
-    if (!profileId || profileId === 'demo-jamaah-id-456' || (typeof profileId === 'string' && profileId.startsWith('demo-'))) {
-      return { completed: true };
+    if (!profileId) {
+      return { completed: false, data: null };
+    }
+    if (typeof profileId === 'string' && profileId.startsWith('demo-')) {
+      return { completed: true, data: DEMO_JAMAAH };
     }
 
     try {
       const { data: jamaahData, error } = await supabase
         .from('jamaah')
-        .select('package_id, nik')
+        .select('*')
         .eq('profile_id', profileId)
         .maybeSingle();
 
       if (error) {
-        console.warn('Gagal cek status onboarding:', error.message);
-        return { completed: false, data: null };
+        console.warn('[jamaahService] Gagal cek status onboarding:', error.message);
+        return { completed: false, data: null, error };
       }
 
       // Jika belum ada record jamaah ATAU belum memilih paket ATAU belum ada NIK
       const nik = jamaahData?.nik || jamaahData?.NIK;
-      if (!jamaahData || !jamaahData.package_id || !nik) {
+      const packageId = jamaahData?.package_id || jamaahData?.paket_id;
+      if (!jamaahData || !packageId || !nik) {
         return { completed: false, data: jamaahData };
       }
 
       return { completed: true, data: jamaahData };
     } catch (e) {
-      console.warn('Error checkOnboardingStatus:', e);
+      console.warn('[jamaahService] Error checkOnboardingStatus:', e);
       return { completed: false, data: null };
     }
   },
 
+  // Simpan atau update data pendaftaran onboarding jamaah
   saveOnboardingData: async (payload) => {
-    const { data: existing } = await supabase
+    const { data: existing, error: checkError } = await supabase
       .from('jamaah')
       .select('id')
       .eq('profile_id', payload.profile_id)
       .maybeSingle();
 
-    if (existing) {
+    if (checkError) {
+      console.warn('[jamaahService] Error saat memeriksa data jamaah existing:', checkError.message);
+    }
+
+    const payloadData = {
+      profile_id: payload.profile_id,
+      nik: payload.nik,
+      passport_number: payload.passport_number || null,
+      gender: payload.jenis_kelamin,
+      phone: payload.no_telepon,
+      address: payload.alamat,
+      package_id: payload.paket_id || null,
+      birth_date: payload.tanggal_lahir,
+    };
+
+    if (existing?.id) {
       const { data, error } = await supabase
         .from('jamaah')
-        .update({
-          nik: payload.nik,
-          passport_number: payload.passport_number || null,
-          gender: payload.jenis_kelamin,
-          phone: payload.no_telepon,
-          address: payload.alamat,
-          package_id: payload.paket_id || null,
-          birth_date: payload.tanggal_lahir,
-        })
+        .update(payloadData)
         .eq('id', existing.id)
         .select()
         .single();
@@ -205,16 +227,7 @@ export const jamaahService = {
     } else {
       const { data, error } = await supabase
         .from('jamaah')
-        .insert([{
-          profile_id: payload.profile_id,
-          nik: payload.nik,
-          passport_number: payload.passport_number || null,
-          gender: payload.jenis_kelamin,
-          phone: payload.no_telepon,
-          address: payload.alamat,
-          package_id: payload.paket_id || null,
-          birth_date: payload.tanggal_lahir,
-        }])
+        .insert([payloadData])
         .select()
         .single();
 

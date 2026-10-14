@@ -20,11 +20,17 @@ export default function AdminPembayaran() {
           
           const enriched = [];
           for (const p of allPayments) {
+            let jName = '-';
+            try {
               const j = await jamaahService.getJamaahById(p.jamaah_id);
-              enriched.push({
-                  ...p,
-                  jamaah_name: j.nama_lengkap
-              });
+              jName = j?.nama_lengkap || '-';
+            } catch (e) {
+              jName = '-';
+            }
+            enriched.push({
+              ...p,
+              jamaah_name: jName
+            });
           }
           setPayments(enriched);
       } catch (err) {

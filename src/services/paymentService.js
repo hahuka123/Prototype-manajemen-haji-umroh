@@ -148,11 +148,14 @@ export const paymentService = {
         .select('*')
         .order('payment_date', { ascending: false });
 
-      if (error) throw error;
-      const mapped = (data || []).map(mapPayment);
-      return mapped.length > 0 ? mapped : DEMO_PAYMENTS;
+      if (error) {
+        console.error('[paymentService] Error getAllPayments:', error.message);
+        throw error;
+      }
+      return (data || []).map(mapPayment);
     } catch (e) {
-      return DEMO_PAYMENTS;
+      console.error('[paymentService] Exception getAllPayments:', e);
+      throw e;
     }
   },
 
@@ -165,11 +168,14 @@ export const paymentService = {
         .eq('payment_method', 'transfer')
         .order('payment_date', { ascending: false });
 
-      if (error) throw error;
-      const mapped = (data || []).map(mapPayment);
-      return mapped.length > 0 ? mapped : DEMO_PAYMENTS.filter(p => p.status === 'pending');
+      if (error) {
+        console.error('[paymentService] Error getPendingTransfers:', error.message);
+        throw error;
+      }
+      return (data || []).map(mapPayment);
     } catch (e) {
-      return DEMO_PAYMENTS.filter(p => p.status === 'pending');
+      console.error('[paymentService] Exception getPendingTransfers:', e);
+      throw e;
     }
   },
 

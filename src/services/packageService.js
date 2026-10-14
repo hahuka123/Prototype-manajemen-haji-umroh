@@ -25,36 +25,39 @@ export const packageService = {
         .select('*')
         .order('departure_date', { ascending: true });
         
-      if (error) throw error;
+      if (error) {
+        console.error('[packageService] Error getAll:', error.message);
+        throw error;
+      }
       
-      const mapped = (data || []).map(p => ({
-          id: p.id,
-          nama: p.name,
-          name: p.name,
-          tipe: p.type,
-          type: p.type,
-          harga: p.price,
-          price: p.price,
-          tanggal_keberangkatan: p.departure_date,
-          departure_date: p.departure_date,
-          tanggal_kepulangan: p.return_date,
-          return_date: p.return_date,
-          durasi_hari: p.duration,
-          duration: p.duration,
-          deskripsi: p.description
+      return (data || []).map(p => ({
+        id: p.id,
+        nama: p.name,
+        name: p.name,
+        tipe: p.type,
+        type: p.type,
+        harga: p.price,
+        price: p.price,
+        tanggal_keberangkatan: p.departure_date,
+        departure_date: p.departure_date,
+        tanggal_kepulangan: p.return_date,
+        return_date: p.return_date,
+        durasi_hari: p.duration,
+        duration: p.duration,
+        deskripsi: p.description
       }));
-      return mapped.length > 0 ? mapped : [DEMO_PACKAGE];
     } catch (e) {
-      return [DEMO_PACKAGE];
+      console.error('[packageService] Exception getAll:', e);
+      throw e;
     }
   },
 
   async getPackages() {
-      return this.getAll();
+    return this.getAll();
   },
 
   async getById(id) {
-    if (id === 'demo-pkg-1' || !id || (typeof id === 'string' && id.startsWith('demo-'))) {
+    if (typeof id === 'string' && id.startsWith('demo-')) {
       return DEMO_PACKAGE;
     }
 
@@ -65,28 +68,27 @@ export const packageService = {
         .eq('id', id)
         .single();
         
-      if (error) {
-        return DEMO_PACKAGE;
-      }
+      if (error) throw error;
       
       return {
-          id: data.id,
-          nama: data.name,
-          name: data.name,
-          tipe: data.type,
-          type: data.type,
-          harga: data.price,
-          price: data.price,
-          tanggal_keberangkatan: data.departure_date,
-          departure_date: data.departure_date,
-          tanggal_kepulangan: data.return_date,
-          return_date: data.return_date,
-          durasi_hari: data.duration,
-          duration: data.duration,
-          deskripsi: data.description
+        id: data.id,
+        nama: data.name,
+        name: data.name,
+        tipe: data.type,
+        type: data.type,
+        harga: data.price,
+        price: data.price,
+        tanggal_keberangkatan: data.departure_date,
+        departure_date: data.departure_date,
+        tanggal_kepulangan: data.return_date,
+        return_date: data.return_date,
+        durasi_hari: data.duration,
+        duration: data.duration,
+        deskripsi: data.description
       };
     } catch (e) {
-      return DEMO_PACKAGE;
+      console.error('[packageService] Error getById:', e);
+      throw e;
     }
   },
 
@@ -94,13 +96,13 @@ export const packageService = {
     const { data, error } = await supabase
       .from('packages')
       .insert([{
-          name: payload.nama,
-          type: payload.tipe,
-          price: payload.harga,
-          departure_date: payload.tanggal_keberangkatan,
-          return_date: payload.tanggal_kepulangan,
-          duration: payload.durasi_hari,
-          description: payload.deskripsi
+        name: payload.nama,
+        type: payload.tipe,
+        price: payload.harga,
+        departure_date: payload.tanggal_keberangkatan,
+        return_date: payload.tanggal_kepulangan,
+        duration: payload.durasi_hari,
+        description: payload.deskripsi
       }])
       .select()
       .single();

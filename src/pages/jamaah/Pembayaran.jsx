@@ -29,18 +29,20 @@ export default function JamaahPembayaran() {
         console.log('[DEBUG] hasil getMyJamaah:', jData);
         setJamaah(jData);
 
-        const jamaahId = jData.id;
+        if (jData?.id) {
+          if (jData.paket_id) {
+            const pkgs = await packageService.getPackages();
+            setPaket((pkgs || []).find(p => p.id === jData.paket_id));
+          }
 
-        if (jData.paket_id) {
-          const pkgs = await packageService.getPackages();
-          setPaket(pkgs.find(p => p.id === jData.paket_id));
+          const pData = await paymentService.getPaymentsByJamaah(jData.id);
+          const sorted = (pData || []).sort(
+            (a, b) => new Date(b.tanggal) - new Date(a.tanggal)
+          );
+          setPayments(sorted);
+        } else {
+          setPayments([]);
         }
-
-        const pData = await paymentService.getPaymentsByJamaah(jamaahId);
-        pData.sort(
-          (a, b) => new Date(b.tanggal) - new Date(a.tanggal)
-        );
-        setPayments(pData);
       } catch (err) {
         console.error('Gagal mengambil data pembayaran:', err);
       } finally {

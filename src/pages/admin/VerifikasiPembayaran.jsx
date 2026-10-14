@@ -27,18 +27,26 @@ export default function AdminVerifikasiPembayaran() {
           const payments = await paymentService.getPendingTransfers();
           
           // Hydrate with Jamaah and Package info
+          const pkgs = await packageService.getPackages();
           const enriched = [];
           for (const p of payments) {
-              const j = await jamaahService.getJamaahById(p.jamaah_id);
+              let jName = '-';
               let packageName = '-';
-              if (j.paket_id) {
-                  const pkgs = await packageService.getPackages();
-                  const pkg = pkgs.find(x => x.id === j.paket_id);
-                  if (pkg) packageName = pkg.nama || pkg.name;
+              try {
+                const j = await jamaahService.getJamaahById(p.jamaah_id);
+                if (j) {
+                  jName = j.nama_lengkap || '-';
+                  if (j.paket_id) {
+                    const pkg = (pkgs || []).find(x => x.id === j.paket_id);
+                    if (pkg) packageName = pkg.nama || pkg.name || '-';
+                  }
+                }
+              } catch (e) {
+                // Abaikan jika jamaah tidak ditemukan
               }
               enriched.push({
                   ...p,
-                  jamaah_name: j.nama_lengkap,
+                  jamaah_name: jName,
                   package_name: packageName
               });
           }

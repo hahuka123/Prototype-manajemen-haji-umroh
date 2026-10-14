@@ -33,7 +33,7 @@ import JamaahJadwal from './pages/jamaah/Jadwal';
 
 // Komponen penentu redirect awal berdasarkan role & status onboarding jamaah
 function RootRedirect() {
-  const { user, profile, role, loading } = useAuth();
+  const { user, profile, role, loading, isDemo } = useAuth();
   const [checking, setChecking] = useState(true);
   const [targetPath, setTargetPath] = useState(null);
 
@@ -59,30 +59,23 @@ function RootRedirect() {
       // 2. Role Jamaah: periksa kelengkapan data & paket ibadah
       if (activeRole === 'jamaah') {
         // Cek akun demo
-        if (user.id === 'demo-jamaah-id-456' || (typeof user.id === 'string' && user.id.startsWith('demo-'))) {
+        if (isDemo || (typeof user.id === 'string' && user.id.startsWith('demo-'))) {
           setTargetPath('/jamaah/dashboard');
           setChecking(false);
           return;
         }
 
         try {
-          // Ambil data profil jika belum ada di state
-          let currentProfile = profile;
-          if (!currentProfile) {
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', user.id)
-              .maybeSingle();
-            currentProfile = profileData;
-          }
-
-          // Cek apakah jamaah sudah punya data & memilih package_id serta NIK
-          const { data: jamaahData } = await supabase
+          // Cek apakah jamaah sudah punya data di database & memilih package_id serta NIK
+          const { data: jamaahData, error } = await supabase
             .from('jamaah')
             .select('*')
             .eq('profile_id', user.id)
             .maybeSingle();
+
+          if (error) {
+            console.warn('[RootRedirect] Error memeriksa onboarding jamaah:', error.message);
+          }
 
           const hasNik = Boolean(jamaahData?.nik || jamaahData?.NIK);
           const hasPackage = Boolean(jamaahData?.package_id || jamaahData?.paket_id);
@@ -91,22 +84,23 @@ function RootRedirect() {
           if (!jamaahData || !hasPackage || !hasNik) {
             setTargetPath('/jamaah/lengkapi-data'); // Arahkan ke form onboarding
           } else {
-            setTargetPath('/jamaah/dashboard'); // Arahkan ke dashboard
+            setTargetPath('/jamaah/dashboard'); // Arahkan ke dashboard jamaah
           }
         } catch (err) {
-          console.warn('Error saat memeriksa onboarding jamaah:', err);
+          console.warn('[RootRedirect] Exception onboarding jamaah:', err);
           setTargetPath('/jamaah/lengkapi-data');
         } finally {
           setChecking(false);
         }
       } else {
-        setTargetPath('/jamaah/dashboard');
+        // Role kosong atau tidak dikenali -> jangan izinkan masuk ke dashboard
+        setTargetPath('/login');
         setChecking(false);
       }
     }
 
     checkJamaahOnboarding();
-  }, [user, profile, role, loading]);
+  }, [user, profile, role, loading, isDemo]);
 
   if (loading || checking) {
     return (

@@ -3,17 +3,17 @@ import { useAuth } from '../hooks/useAuth';
 import { LogOut, User, ShieldCheck } from 'lucide-react';
 
 export default function Navbar() {
-  const { profile, role, logout, isConfigured } = useAuth();
+  const { profile, role, logout, isConfigured, isDemo } = useAuth();
 
   const displayName = profile?.full_name || 'Pengguna';
-  const displayRole = role === 'admin' ? 'Administrator' : 'Jamaah';
+  const displayRole = role === 'admin' ? 'Administrator' : role === 'jamaah' ? 'Jamaah' : 'Pengguna';
 
   return (
     <header className="top-navbar">
       <div className="navbar-greeting">
         <h3>
           Sistem Manajemen Haji & Umroh
-          {!isConfigured && (
+          {(isDemo || !isConfigured) && (
             <span style={{
               fontSize: '0.68rem',
               background: '#fef3c7',
@@ -23,7 +23,7 @@ export default function Navbar() {
               borderRadius: '9999px',
               fontWeight: 600
             }}>
-              Demo Mode
+              Mode Demo
             </span>
           )}
         </h3>

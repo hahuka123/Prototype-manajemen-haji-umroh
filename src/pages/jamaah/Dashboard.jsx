@@ -82,52 +82,34 @@ export default function JamaahDashboard() {
     }
   }, [profile?.id]);
 
-  const handleAutoRegisterJamaah = async () => {
-    try {
-      setLoading(true);
-      await jamaahService.addJamaah({
-        profile_id: profile.id,
-        nik: '3201' + Math.floor(100000000000 + Math.random() * 900000000000),
-        jenis_kelamin: 'Laki-laki',
-        no_telepon: profile.phone || '081234567890',
-        alamat: 'Indonesia',
-        paket_id: null,
-        tanggal_lahir: '1990-01-01',
-      });
-      alert('Data jamaah berhasil dibuat dan dihubungkan ke akun Anda!');
-      window.location.reload();
-    } catch (e) {
-      console.error(e);
-      alert('Gagal menghubungkan data: ' + (e.message || 'Pastikan RLS dan tabel Supabase sudah terkonfigurasi.'));
-      setLoading(false);
-    }
+  const handleGoToOnboarding = () => {
+    navigate('/jamaah/lengkapi-data');
   };
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (!jamaah) return (
     <div className="card" style={{ margin: '24px', padding: '32px', textAlign: 'center' }}>
-      <AlertCircle size={44} style={{ color: '#ef4444', margin: '0 auto 16px' }} />
-      <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Data Jamaah Belum Terhubung</h3>
+      <AlertCircle size={44} style={{ color: '#f59e0b', margin: '0 auto 16px' }} />
+      <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Data Jamaah Belum Terdaftar</h3>
       <p style={{ color: 'var(--text-muted)', marginTop: '8px', maxWidth: '600px', margin: '8px auto' }}>
-        Akun yang sedang login (ID: <code>{profile?.id}</code>) belum memiliki data jamaah yang terdaftar di database Supabase.
+        Akun Anda (ID: <code>{profile?.id}</code>) belum memiliki data administratif jamaah dan paket perjalanan ibadah.
       </p>
 
-      <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
         <button 
           className="btn btn-primary"
-          onClick={handleAutoRegisterJamaah}
-          style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}
+          onClick={handleGoToOnboarding}
+          style={{ display: 'inline-flex', gap: '8px', alignItems: 'center', padding: '10px 20px' }}
         >
-          <span>+ Hubungkan & Buat Data Jamaah Sekarang</span>
+          <span>+ Lengkapi Data Jamaah & Pilih Paket</span>
         </button>
       </div>
 
-      <div style={{ marginTop: '20px', fontSize: '0.875rem', color: 'var(--text-muted)', background: '#f8fafc', padding: '16px', borderRadius: '8px', display: 'inline-block', textAlign: 'left', lineHeight: 1.6, border: '1px solid var(--border-color)' }}>
-        <strong>Checklist Supabase:</strong><br />
-        1. Jika menguji prototipe instan, gunakan <strong>Mode Demo</strong>.<br />
-        2. Buka Supabase Table Editor &rarr; tabel <code>jamaah</code>.<br />
-        3. Pastikan kolom <code>profile_id</code> diisi sesuai ID akun: <code>{profile?.id}</code>.<br />
-        4. Buka Console Browser (F12) untuk melihat rincian log query.
+      <div style={{ marginTop: '24px', fontSize: '0.85rem', color: 'var(--text-muted)', background: '#f8fafc', padding: '16px', borderRadius: '8px', display: 'inline-block', textAlign: 'left', lineHeight: 1.6, border: '1px solid var(--border-color)' }}>
+        <strong>Catatan Sistem:</strong><br />
+        1. Klik tombol di atas untuk mengisi NIK (16 digit), data pribadi, dan paket umroh/haji.<br />
+        2. Data akan langsung terhubung ke profil akun Anda di Supabase secara aman.<br />
+        3. Jika memerlukan bantuan, hubungi bagian administrasi biro perjalanan.
       </div>
     </div>
   );

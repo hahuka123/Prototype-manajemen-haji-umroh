@@ -57,9 +57,12 @@ export const scheduleService = {
           .order('date', { ascending: true })
           .order('time', { ascending: true });
       
-      if (error) throw error;
+      if (error) {
+        console.error('[scheduleService] Error getSchedules:', error.message);
+        throw error;
+      }
       
-      const mapped = (data || []).map(s => ({
+      return (data || []).map(s => ({
           id: s.id,
           paket_id: s.package_id,
           tanggal_keberangkatan: s.date,
@@ -69,9 +72,9 @@ export const scheduleService = {
           deskripsi: s.description,
           maskapai: 'Saudia Airlines'
       }));
-      return mapped.length > 0 ? mapped : DEMO_SCHEDULES;
     } catch (e) {
-      return DEMO_SCHEDULES;
+      console.error('[scheduleService] Exception getSchedules:', e);
+      throw e;
     }
   },
   
@@ -83,15 +86,19 @@ export const scheduleService = {
         .order('date', { ascending: true })
         .order('time', { ascending: true });
         
-      if (error) throw error;
-      return (data && data.length > 0) ? data : DEMO_SCHEDULES;
+      if (error) {
+        console.error('[scheduleService] Error getAll:', error.message);
+        throw error;
+      }
+      return data || [];
     } catch (e) {
-      return DEMO_SCHEDULES;
+      console.error('[scheduleService] Exception getAll:', e);
+      throw e;
     }
   },
 
   async getByPackage(packageId) {
-    if (packageId === 'demo-pkg-1' || !packageId || (typeof packageId === 'string' && packageId.startsWith('demo-'))) {
+    if (typeof packageId === 'string' && packageId.startsWith('demo-')) {
       return DEMO_SCHEDULES;
     }
 
@@ -103,10 +110,14 @@ export const scheduleService = {
         .order('date', { ascending: true })
         .order('time', { ascending: true });
         
-      if (error) throw error;
-      return (data && data.length > 0) ? data : DEMO_SCHEDULES;
+      if (error) {
+        console.error('[scheduleService] Error getByPackage:', error.message);
+        throw error;
+      }
+      return data || [];
     } catch (e) {
-      return DEMO_SCHEDULES;
+      console.error('[scheduleService] Exception getByPackage:', e);
+      throw e;
     }
   },
 

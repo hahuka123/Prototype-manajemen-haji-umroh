@@ -17,9 +17,9 @@ export default function JamaahProfil() {
         if (!profile?.id) return;
         const j = await jamaahService.getMyJamaah(profile.id);
         setJamaah(j);
-        if (j.paket_id) {
+        if (j && j.paket_id) {
             const pkgs = await packageService.getPackages();
-            setPaket(pkgs.find(p => p.id === j.paket_id));
+            setPaket((pkgs || []).find(p => p.id === j.paket_id));
         }
       } catch (err) {
         console.error(err);

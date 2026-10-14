@@ -18,11 +18,15 @@ export default function AdminDokumen() {
       const docs = await documentService.getPendingVerifications();
       setPendingDocs(docs);
       
-      const jamaahIds = [...new Set(docs.map(d => d.jamaah_id))];
+      const jamaahIds = [...new Set((docs || []).map(d => d.jamaah_id).filter(Boolean))];
       const jMap = {};
       for (const id of jamaahIds) {
+        try {
           const j = await jamaahService.getJamaahById(id);
-          jMap[id] = j.nama_lengkap;
+          jMap[id] = j?.nama_lengkap || 'Jamaah';
+        } catch (e) {
+          jMap[id] = 'Jamaah';
+        }
       }
       setJamaahMap(jMap);
     } catch (err) {

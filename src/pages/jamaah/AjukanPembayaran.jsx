@@ -32,8 +32,10 @@ export default function JamaahAjukanPembayaran() {
         }
         const j = await jamaahService.getMyJamaah(profile.id);
         setJamaah(j);
-        setSisaTagihan(Number(j.sisa_tagihan));
-        setAmount(String(j.sisa_tagihan)); // default
+        if (j) {
+          setSisaTagihan(Number(j.sisa_tagihan || 0));
+          setAmount(String(j.sisa_tagihan || 0));
+        }
       } catch (err) {
         console.error(err);
         setErrorMsg(err.message);

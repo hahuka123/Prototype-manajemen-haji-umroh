@@ -26,10 +26,14 @@ export default function JamaahDokumen() {
       if (!profile?.id) return;
       const jData = await jamaahService.getMyJamaah(profile.id);
       setJamaah(jData);
-      setPersentase(jData.dokumen_persentase);
-
-      const docs = await documentService.getDocumentsByJamaah(jData.id);
-      setDocuments(docs);
+      if (jData?.id) {
+        setPersentase(jData.dokumen_persentase || 0);
+        const docs = await documentService.getDocumentsByJamaah(jData.id);
+        setDocuments(docs);
+      } else {
+        setPersentase(0);
+        setDocuments([]);
+      }
     } catch (err) {
       console.error(err);
     } finally {

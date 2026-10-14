@@ -47,9 +47,9 @@ export default function AdminJamaah() {
     }
   };
 
-  const filteredJamaah = jamaahList.filter(j => 
-      j.nama_lengkap.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      j.nik.includes(searchTerm)
+  const filteredJamaah = (jamaahList || []).filter(j => 
+      (j.nama_lengkap || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || 
+      (j.nik || '').includes(searchTerm || '')
   );
 
   return (

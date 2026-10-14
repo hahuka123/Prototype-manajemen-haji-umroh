@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Lock, Mail, ShieldCheck, UserCheck, AlertCircle } from 'lucide-react';
+import { Lock, Mail, ShieldCheck, UserCheck, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -9,23 +9,50 @@ export default function Login() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { login, demoLogin, isConfigured } = useAuth();
+  const { login, demoLogin, isConfigured, isDemoAllowed } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname || '/';
+  const from = location.state?.from?.pathname;
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErrorMsg('');
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setErrorMsg('Silakan masukkan alamat email Anda.');
+      return;
+    }
+
+    if (!password) {
+      setErrorMsg('Silakan masukkan kata sandi akun Anda.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const cleanEmail = email.trim().toLowerCase();
-      const targetDest = from === '/jamaah/dashboard' ? '/' : from;
-      navigate(targetDest, { replace: true });
+      // 1. Panggil login riil Supabase dan validasi role dari tabel profiles
+      const authResult = await login(cleanEmail, password);
+
+      // 2. Navigasi hanya setelah identitas dan role tervalidasi
+      const userRole = authResult?.role;
+
+      if (userRole === 'admin') {
+        // Jika sebelumnya diarahkan dari rute admin tertentu, kembali ke rute tersebut
+        const adminDest = from && from.startsWith('/admin') ? from : '/admin/dashboard';
+        navigate(adminDest, { replace: true });
+      } else if (userRole === 'jamaah') {
+        // Jika sebelumnya diarahkan dari rute jamaah tertentu
+        const jamaahDest = from && from.startsWith('/jamaah') ? from : '/';
+        navigate(jamaahDest, { replace: true });
+      } else {
+        // Pengguna tanpa role yang valid tidak boleh masuk
+        setErrorMsg('Role akun Anda tidak valid atau tidak memiliki hak akses dashboard.');
+      }
     } catch (err) {
-      console.error(err);
+      console.error('[Login] Error:', err);
       setErrorMsg(err.message || 'Email atau kata sandi tidak valid. Silakan coba lagi.');
     } finally {
       setIsSubmitting(false);
@@ -33,11 +60,15 @@ export default function Login() {
   }
 
   function handleDemoSelect(role) {
-    demoLogin(role);
-    if (role === 'admin') {
-      navigate('/admin/dashboard', { replace: true });
-    } else {
-      navigate('/jamaah/dashboard', { replace: true });
+    try {
+      demoLogin(role);
+      if (role === 'admin') {
+        navigate('/admin/dashboard', { replace: true });
+      } else {
+        navigate('/jamaah/dashboard', { replace: true });
+      }
+    } catch (err) {
+      setErrorMsg(err.message || 'Gagal mengaktifkan mode demo.');
     }
   }
 
@@ -110,7 +141,8 @@ export default function Login() {
             borderRadius: 'var(--radius-md)',
             color: '#b91c1c',
             fontSize: '0.85rem',
-            marginBottom: '20px'
+            marginBottom: '20px',
+            lineHeight: 1.45
           }}>
             <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
             <span>{errorMsg}</span>
@@ -129,6 +161,7 @@ export default function Login() {
                 style={{ paddingLeft: '40px' }}
                 placeholder="nama@email.com"
                 value={email}
+                disabled={isSubmitting}
                 onChange={(e) => setEmail(e.target.value)}
               />
               <Mail size={18} style={{
@@ -152,6 +185,7 @@ export default function Login() {
                 style={{ paddingLeft: '40px' }}
                 placeholder="••••••••"
                 value={password}
+                disabled={isSubmitting}
                 onChange={(e) => setPassword(e.target.value)}
               />
               <Lock size={18} style={{
@@ -167,10 +201,17 @@ export default function Login() {
           <button
             type="submit"
             className="btn btn-primary"
-            style={{ width: '100%', padding: '12px', marginTop: '10px' }}
+            style={{ width: '100%', padding: '12px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             disabled={isSubmitting}
           >
-            {isSubmitting ? 'Memproses Masuk...' : 'Masuk Akun'}
+            {isSubmitting ? (
+              <>
+                <Loader2 size={18} className="spin-icon" style={{ animation: 'spin 1s linear infinite' }} />
+                <span>Memverifikasi Akun & Role...</span>
+              </>
+            ) : (
+              <span>Masuk Akun</span>
+            )}
           </button>
         </form>
 
@@ -181,75 +222,83 @@ export default function Login() {
           </Link>
         </div>
 
-        {/* Demo Fast Login Switcher */}
-        <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
-          <div style={{
-            fontSize: '0.78rem',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: 'var(--text-muted)',
-            textAlign: 'center',
-            marginBottom: '12px'
-          }}>
-            Akses Cepat Pengujian (Mode Demo)
-          </div>
+        {/* Demo Fast Login Switcher (Hanya jika mode demo diizinkan secara eksplisit) */}
+        {isDemoAllowed && (
+          <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              color: 'var(--text-muted)',
+              textAlign: 'center',
+              marginBottom: '12px'
+            }}>
+              Akses Cepat Pengujian (Mode Demo Presentasi)
+            </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <button
-              type="button"
-              onClick={() => handleDemoSelect('admin')}
-              className="btn btn-secondary"
-              style={{
-                fontSize: '0.8rem',
-                padding: '8px 10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                border: '1px solid var(--primary-100)',
-                background: 'var(--primary-50)',
-                color: 'var(--primary-800)'
-              }}
-            >
-              <ShieldCheck size={16} />
-              <span>Login Admin</span>
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => handleDemoSelect('admin')}
+                className="btn btn-secondary"
+                disabled={isSubmitting}
+                style={{
+                  fontSize: '0.8rem',
+                  padding: '8px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  border: '1px solid var(--primary-100)',
+                  background: 'var(--primary-50)',
+                  color: 'var(--primary-800)'
+                }}
+              >
+                <ShieldCheck size={16} />
+                <span>Demo Admin</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleDemoSelect('jamaah')}
-              className="btn btn-secondary"
-              style={{
-                fontSize: '0.8rem',
-                padding: '8px 10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                border: '1px solid var(--accent-100)',
-                background: 'var(--accent-50)',
-                color: 'var(--accent-800)'
-              }}
-            >
-              <UserCheck size={16} />
-              <span>Login Jamaah</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => handleDemoSelect('jamaah')}
+                className="btn btn-secondary"
+                disabled={isSubmitting}
+                style={{
+                  fontSize: '0.8rem',
+                  padding: '8px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  border: '1px solid var(--accent-100)',
+                  background: 'var(--accent-50)',
+                  color: 'var(--accent-800)'
+                }}
+              >
+                <UserCheck size={16} />
+                <span>Demo Jamaah</span>
+              </button>
+            </div>
 
-          {!isConfigured && (
             <p style={{
               fontSize: '0.72rem',
               color: 'var(--text-muted)',
               textAlign: 'center',
-              marginTop: '12px',
+              marginTop: '10px',
               lineHeight: 1.4
             }}>
-              Kredensial Supabase di <code>.env</code> masih default. Gunakan tombol demo di atas untuk mencoba seluruh alur antarmuka secara instan.
+              Tombol demo ini hanya untuk simulasi antarmuka dan terpisah dari autentikasi Supabase nyata.
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
