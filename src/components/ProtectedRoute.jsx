@@ -1,10 +1,10 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { AlertCircle, LogOut, ShieldAlert } from 'lucide-react';
+import { AlertCircle, LogOut, ShieldAlert, RefreshCw } from 'lucide-react';
 
 export default function ProtectedRoute({ children, allowedRoles }) {
-  const { user, profile, role, loading, profileError, logout } = useAuth();
+  const { user, profile, role, loading, profileError, logout, refreshProfile } = useAuth();
   const location = useLocation();
 
   // 1. Tampilkan loading spinner saat memverifikasi sesi dan profil
@@ -88,6 +88,14 @@ export default function ProtectedRoute({ children, allowedRoles }) {
           </div>
 
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <button
+              onClick={() => refreshProfile()}
+              className="btn btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <RefreshCw size={16} />
+              <span>Coba Lagi</span>
+            </button>
             <button
               onClick={logout}
               className="btn btn-secondary"

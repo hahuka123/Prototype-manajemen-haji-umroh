@@ -3,8 +3,8 @@ import { supabase, isConfigured } from '../services/supabase';
 
 const AuthContext = createContext(null);
 
-// Konfigurasi apakah mode demo diizinkan (default: true untuk dev/testing, dapat dinonaktifkan di prod via VITE_ALLOW_DEMO_MODE=false)
-const isDemoAllowed = import.meta.env.VITE_ALLOW_DEMO_MODE !== 'false';
+// Konfigurasi apakah mode demo diizinkan (default: false untuk keamanan data produksi; aktif hanya jika VITE_ALLOW_DEMO_MODE='true')
+const isDemoAllowed = import.meta.env.VITE_ALLOW_DEMO_MODE === 'true';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -13,7 +13,7 @@ export function AuthProvider({ children }) {
   const [profileError, setProfileError] = useState(null);
   const [isDemo, setIsDemo] = useState(false);
 
-  // Ambil profil detail resmi dari tabel public.profiles
+  // Ambil profil detail resmi dari tabel public.profiles berdasarkan user ID Supabase Auth
   const fetchUserProfile = useCallback(async (userId) => {
     if (!userId) {
       setProfile(null);
@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
     if (!isConfigured) {
       const err = new Error('Supabase client belum dikonfigurasi di .env');
       setProfileError(err.message);
-      return { profile: null, error: err };
+      return { profile: null, error: err, isQueryError: true };
     }
 
     try {
@@ -39,24 +39,24 @@ export function AuthProvider({ children }) {
         setProfile(null);
         const errMsg = `Gagal memuat data profil dari database: ${error.message}`;
         setProfileError(errMsg);
-        return { profile: null, error: new Error(errMsg) };
+        return { profile: null, error: new Error(errMsg), isQueryError: true };
       }
 
       if (!data) {
         console.warn(`[useAuth] Profil dengan ID ${userId} tidak ditemukan di tabel profiles.`);
         setProfile(null);
-        const errMsg = 'Profil akun belum terhubung di database (tabel profiles). Pastikan profil Anda telah dibuat atau hubungi administrator.';
+        const errMsg = 'Profil akun belum terhubung di database (tabel profiles). Hubungi administrator untuk memastikan profil akun Anda telah dibuat.';
         setProfileError(errMsg);
-        return { profile: null, error: new Error(errMsg) };
+        return { profile: null, error: new Error(errMsg), isNotFound: true };
       }
 
-      // Validasi role resmi
+      // Validasi role resmi: HANYA 'admin' dan 'jamaah' yang sah
       if (data.role !== 'admin' && data.role !== 'jamaah') {
         console.warn(`[useAuth] Role pengguna tidak valid: "${data.role}"`);
-        setProfile(data);
+        setProfile(null); // Jangan set data profil jika role tidak dikenali
         const errMsg = `Role akun "${data.role || 'kosong'}" tidak dikenali oleh sistem. Hanya role "admin" dan "jamaah" yang diizinkan.`;
         setProfileError(errMsg);
-        return { profile: data, error: new Error(errMsg) };
+        return { profile: null, error: new Error(errMsg), isInvalidRole: true };
       }
 
       setProfile(data);
@@ -65,9 +65,9 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error('[useAuth] Exception fetchUserProfile:', err);
       setProfile(null);
-      const errMsg = err.message || 'Terjadi kesalahan saat memeriksa profil pengguna.';
+      const errMsg = err.message || 'Terjadi kesalahan jaringan saat memeriksa profil pengguna.';
       setProfileError(errMsg);
-      return { profile: null, error: err };
+      return { profile: null, error: err, isQueryError: true };
     }
   }, []);
 
@@ -76,7 +76,7 @@ export function AuthProvider({ children }) {
     let mounted = true;
 
     async function initAuth() {
-      // 1. Cek sesi demo dari localStorage HANYA jika demo mode diizinkan
+      // 1. Cek sesi demo dari localStorage HANYA jika demo mode diizinkan secara eksplisit
       const savedDemo = localStorage.getItem('demo_auth_user');
       if (savedDemo && isDemoAllowed) {
         try {
@@ -109,7 +109,7 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      // 3. Ambil sesi Supabase Auth yang aktif
+      // 3. Ambil sesi Supabase Auth yang aktif (menjaga sesi valid saat refresh)
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) {
@@ -136,21 +136,33 @@ export function AuthProvider({ children }) {
 
     initAuth();
 
-    // 4. Pasang pendengar perubahan autentikasi Supabase
+    // 4. Pasang listener perubahan autentikasi Supabase
     if (isConfigured) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event, session) => {
           if (!mounted) return;
 
-          // Jika sedang dalam Demo Mode, abaikan auth change dari Supabase
+          // Jika sedang dalam Demo Mode, abaikan event auth Supabase
           if (localStorage.getItem('demo_auth_user')) {
+            return;
+          }
+
+          if (event === 'SIGNED_OUT') {
+            setUser(null);
+            setProfile(null);
+            setIsDemo(false);
+            setProfileError(null);
+            setLoading(false);
             return;
           }
 
           if (session?.user) {
             setUser(session.user);
             setIsDemo(false);
-            await fetchUserProfile(session.user.id);
+            // Jika bukan INITIAL_SESSION (yang sudah diproses oleh getSession di initAuth), muat ulang profil
+            if (event !== 'INITIAL_SESSION') {
+              await fetchUserProfile(session.user.id);
+            }
           } else {
             setUser(null);
             setProfile(null);
@@ -208,22 +220,32 @@ export function AuthProvider({ children }) {
       throw new Error('Gagal mendapatkan sesi pengguna dari Supabase.');
     }
 
-    setUser(data.user);
-
     // Ambil dan validasi profil resmi dari tabel profiles
     const { profile: userProfile, error: profileErr } = await fetchUserProfile(data.user.id);
     
-    if (profileErr) {
-      throw profileErr;
+    // Tangani kegagalan mengambil profil dengan aman tanpa menganggap sebagai Jamaah otomatis:
+    // Jika profil tidak ditemukan, error query, atau role tidak sah, batalkan sesi Supabase agar tidak meninggalkan sesi aktif yang invalid
+    if (profileErr || !userProfile || (userProfile.role !== 'admin' && userProfile.role !== 'jamaah')) {
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.warn('[useAuth] Error signOut saat verifikasi profil gagal:', signOutErr);
+      }
+      setUser(null);
+      setProfile(null);
+
+      if (profileErr) {
+        throw profileErr;
+      }
+      if (!userProfile) {
+        throw new Error('Autentikasi berhasil, namun profil akun Anda belum terhubung di tabel profiles database.');
+      }
+      throw new Error(`Role akun "${userProfile.role || 'kosong'}" tidak sah. Hanya role "admin" dan "jamaah" yang diizinkan.`);
     }
 
-    if (!userProfile) {
-      throw new Error('Autentikasi berhasil, namun data profil Anda belum terhubung di tabel profiles.');
-    }
-
-    if (userProfile.role !== 'admin' && userProfile.role !== 'jamaah') {
-      throw new Error(`Role akun "${userProfile.role || 'kosong'}" tidak valid. Hanya role "admin" dan "jamaah" yang diizinkan.`);
-    }
+    setUser(data.user);
+    setProfile(userProfile);
+    setProfileError(null);
 
     return {
       user: data.user,
@@ -242,6 +264,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('demo_auth_user');
     setIsDemo(false);
 
+    // Pendaftaran publik selalu menetapkan role: 'jamaah'
     const { data, error } = await supabase.auth.signUp({
       email: cleanEmail,
       password,
@@ -258,7 +281,7 @@ export function AuthProvider({ children }) {
     return data;
   }
 
-  // Demo Login eksplisit untuk keperluan pengujian / presentasi prototipe
+  // Demo Login eksplisit HANYA jika mode demo diizinkan
   function demoLogin(role = 'admin') {
     if (!isDemoAllowed) {
       throw new Error('Mode demo dinonaktifkan di environment ini.');
@@ -285,7 +308,7 @@ export function AuthProvider({ children }) {
     setProfileError(null);
   }
 
-  // Logout
+  // Logout resmi
   async function logout() {
     localStorage.removeItem('demo_auth_user');
     setIsDemo(false);
@@ -301,15 +324,15 @@ export function AuthProvider({ children }) {
     setProfileError(null);
   }
 
-  // Role resmi HANYA dari profile.role
-  const role = profile?.role || null;
+  // Role resmi HANYA diambil dari profile.role yang sah ('admin' atau 'jamaah')
+  const validRole = (profile?.role === 'admin' || profile?.role === 'jamaah') ? profile.role : null;
 
   const value = {
     user,
     profile,
-    role,
-    isAdmin: role === 'admin',
-    isJamaah: role === 'jamaah',
+    role: validRole,
+    isAdmin: validRole === 'admin',
+    isJamaah: validRole === 'jamaah',
     loading,
     profileError,
     isDemo,

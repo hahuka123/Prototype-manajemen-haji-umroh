@@ -9,11 +9,24 @@ export default function Login() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { login, demoLogin, isConfigured, isDemoAllowed } = useAuth();
+  const { login, demoLogin, isConfigured, isDemoAllowed, user, role, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = location.state?.from?.pathname;
+
+  // Jika pengguna sudah terautentikasi dan memiliki role valid, arahkan langsung ke dashboard
+  React.useEffect(() => {
+    if (!loading && user && role) {
+      if (role === 'admin') {
+        const adminDest = from && from.startsWith('/admin') ? from : '/admin/dashboard';
+        navigate(adminDest, { replace: true });
+      } else if (role === 'jamaah') {
+        const jamaahDest = from && from.startsWith('/jamaah') ? from : '/';
+        navigate(jamaahDest, { replace: true });
+      }
+    }
+  }, [user, role, loading, from, navigate]);
 
   async function handleSubmit(e) {
     e.preventDefault();
