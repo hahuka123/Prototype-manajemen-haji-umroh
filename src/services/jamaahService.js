@@ -2,8 +2,21 @@ import { supabase } from './supabase';
 
 function mapJamaah(j) {
   if (!j) return null;
-  const dokLengkap = Number(j.dokumen_lengkap || 0);
-  const docPercent = Math.min(100, Math.round((dokLengkap / 6) * 100));
+  
+  let docPercent = 0;
+  let dokLengkap = 0;
+
+  if (j.dokumen_lengkap !== undefined && j.dokumen_lengkap !== null) {
+    dokLengkap = Number(j.dokumen_lengkap);
+    docPercent = Math.min(100, Math.round((dokLengkap / 6) * 100));
+  } else if (j.persentase_dokumen !== undefined && j.persentase_dokumen !== null) {
+    docPercent = Math.min(100, Math.round(Number(j.persentase_dokumen)));
+    dokLengkap = Math.round((docPercent / 100) * 6);
+  } else if (j.dokumen_persentase !== undefined && j.dokumen_persentase !== null) {
+    docPercent = Math.min(100, Math.round(Number(j.dokumen_persentase)));
+    dokLengkap = Math.round((docPercent / 100) * 6);
+  }
+
   const sisa = Number(j.sisa_tagihan || 0);
   const total = Number(j.total_terbayar || 0);
   const pending = Number(j.pending_verifikasi || 0);
@@ -136,11 +149,32 @@ export const jamaahService = {
       const summary = summaryRes.data || {};
       const detail = detailRes.data || {};
       const base = mapJamaah(summary);
+      const jamaahId = detail.id || base.id;
+
+      let dokLengkap = base.dokumen_lengkap;
+      let docPercent = base.dokumen_persentase;
+
+      if (jamaahId && (!dokLengkap || docPercent === 0)) {
+        try {
+          const { count, error: countErr } = await supabase
+            .from('documents')
+            .select('id', { count: 'exact', head: true })
+            .eq('jamaah_id', jamaahId)
+            .eq('status', 'Lengkap');
+            
+          if (!countErr && typeof count === 'number' && count > 0) {
+            dokLengkap = count;
+            docPercent = Math.min(100, Math.round((count / 6) * 100));
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
 
       return {
         ...base,
-        id: detail.id || base.id,
-        jamaah_id: detail.id || base.jamaah_id,
+        id: jamaahId,
+        jamaah_id: jamaahId,
         passport_number: detail.passport_number || '',
         nomor_paspor: detail.passport_number || '',
         gender: detail.gender || 'Laki-laki',
@@ -150,7 +184,10 @@ export const jamaahService = {
         birth_date: detail.birth_date || '',
         tanggal_lahir: detail.birth_date || '',
         paket_id: detail.package_id || base.paket_id,
-        package_id: detail.package_id || base.package_id
+        package_id: detail.package_id || base.package_id,
+        dokumen_lengkap: dokLengkap,
+        dokumen_persentase: docPercent,
+        persentase_dokumen: docPercent,
       };
     } catch (err) {
       console.error('[jamaahService] Exception getMyJamaah:', err);
@@ -185,14 +222,35 @@ export const jamaahService = {
       const summary = summaryRes.data || {};
       const detail = detailRes.data || {};
       const base = mapJamaah(summary);
+      const jamaahId = detail.id || summary.jamaah_id || id;
+
+      let dokLengkap = base.dokumen_lengkap;
+      let docPercent = base.dokumen_persentase;
+
+      if (jamaahId && (!dokLengkap || docPercent === 0)) {
+        try {
+          const { count, error: countErr } = await supabase
+            .from('documents')
+            .select('id', { count: 'exact', head: true })
+            .eq('jamaah_id', jamaahId)
+            .eq('status', 'Lengkap');
+            
+          if (!countErr && typeof count === 'number' && count > 0) {
+            dokLengkap = count;
+            docPercent = Math.min(100, Math.round((count / 6) * 100));
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
 
       const fullName = summary.full_name || detail.profiles?.full_name || 'Jamaah';
       const phone = summary.phone || detail.phone || detail.profiles?.phone || '-';
 
       return {
         ...base,
-        id: detail.id || summary.jamaah_id || id,
-        jamaah_id: detail.id || summary.jamaah_id || id,
+        id: jamaahId,
+        jamaah_id: jamaahId,
         profile_id: detail.profile_id || summary.profile_id,
         nik: detail.nik || summary.nik || '',
         nama_lengkap: fullName,
@@ -211,6 +269,9 @@ export const jamaahService = {
         paket_id: detail.package_id || summary.package_id,
         status: detail.status || summary.status || base.status,
         status_keberangkatan: detail.status || summary.status || base.status_keberangkatan,
+        dokumen_lengkap: dokLengkap,
+        dokumen_persentase: docPercent,
+        persentase_dokumen: docPercent,
       };
     } catch (err) {
       console.error('[jamaahService] getJamaahById error:', err);

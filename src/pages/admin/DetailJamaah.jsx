@@ -130,9 +130,15 @@ export default function AdminDetailJamaah() {
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span>Persentase:</span>
-                <strong style={{ fontSize: '1.2rem', color: jamaah.dokumen_persentase === 100 ? 'var(--success-color)' : 'var(--warning-color)' }}>
-                    {jamaah.dokumen_persentase}%
-                </strong>
+                {(() => {
+                  const docProgress = documentService.calculateProgress(dokumen);
+                  const percent = dokumen.length > 0 ? docProgress.persentase : Number(jamaah.dokumen_persentase || 0);
+                  return (
+                    <strong style={{ fontSize: '1.2rem', color: percent === 100 ? 'var(--success-color)' : 'var(--warning-color)' }}>
+                        {percent}%
+                    </strong>
+                  );
+                })()}
             </div>
         </div>
         

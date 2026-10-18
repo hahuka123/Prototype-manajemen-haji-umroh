@@ -199,8 +199,8 @@ export default function JamaahDashboard() {
         />
         <StatCard
           title="Kelengkapan Berkas"
-          value={`${Math.round(jamaah.dokumen_persentase)}%`}
-          subtext={`${documents.filter(d => d.status === 'verified' || d.status === 'Lengkap').length} dari 6 dokumen lengkap`}
+          value={`${documents.length > 0 ? documentService.calculateProgress(documents).persentase : Math.round(Number(jamaah.dokumen_persentase || 0))}%`}
+          subtext={`${documents.length > 0 ? documentService.calculateProgress(documents).lengkap : Number(jamaah.dokumen_lengkap || 0)} dari 6 dokumen lengkap`}
           icon={<FileCheck2 size={24} />}
           variant="accent"
         />

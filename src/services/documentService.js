@@ -252,5 +252,19 @@ export const documentService = {
           jamaah_name: d.jamaah?.profiles?.full_name || 'Jamaah'
         };
     }));
+  },
+
+  // Hitung progres kelengkapan dokumen (rumus: jumlah dokumen lengkap / 6 * 100)
+  calculateProgress: (documents = []) => {
+    const totalWajib = REQUIRED_DOCUMENTS.length; // 6
+    const lengkap = (documents || []).filter(d => d.status === 'Lengkap').length;
+    const persentase = totalWajib > 0 ? Math.min(100, Math.round((lengkap / totalWajib) * 100)) : 0;
+    const statusLabel = persentase === 100 ? 'Lengkap' : persentase >= 70 ? 'Hampir Lengkap' : 'Belum Lengkap';
+    return {
+      total: totalWajib,
+      lengkap,
+      persentase,
+      statusLabel
+    };
   }
 };

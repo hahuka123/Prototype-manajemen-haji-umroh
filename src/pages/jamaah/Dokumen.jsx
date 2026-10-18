@@ -9,7 +9,6 @@ export default function JamaahDokumen() {
   const [jamaah, setJamaah] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [persentase, setPersentase] = useState(0);
   const [uploadingTipe, setUploadingTipe] = useState(null);
   const [activeTipe, setActiveTipe] = useState(null);
   const fileInputRef = useRef(null);
@@ -27,11 +26,9 @@ export default function JamaahDokumen() {
       const jData = await jamaahService.getMyJamaah(profile.id);
       setJamaah(jData);
       if (jData?.id) {
-        setPersentase(jData.dokumen_persentase || 0);
         const docs = await documentService.getDocumentsByJamaah(jData.id);
-        setDocuments(docs);
+        setDocuments(docs || []);
       } else {
-        setPersentase(0);
         setDocuments([]);
       }
     } catch (err) {
@@ -84,8 +81,8 @@ export default function JamaahDokumen() {
     }
   };
 
-  const totalWajib = 6;
-  const totalLengkap = documents.filter(d => d.status === 'Lengkap').length;
+  // Hitung progres langsung dari data dokumen yang ditampilkan pada tabel (single source of truth)
+  const { total: totalWajib, lengkap: totalLengkap, persentase, statusLabel } = documentService.calculateProgress(documents);
 
   if (loading) return <div className="p-8 text-center">Loading dokumen...</div>;
   if (!jamaah) return (
@@ -128,7 +125,7 @@ export default function JamaahDokumen() {
           <div>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Progres Kelengkapan Berkas</span>
             <h2 style={{ fontSize: '1.5rem', color: 'var(--primary-800)', marginTop: '2px' }}>
-              {persentase}% • {persentase === 100 ? 'Lengkap' : persentase >= 70 ? 'Hampir Lengkap' : 'Belum Lengkap'}
+              {persentase}% • {statusLabel}
             </h2>
           </div>
           <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
