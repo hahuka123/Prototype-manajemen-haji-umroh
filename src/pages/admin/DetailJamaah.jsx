@@ -115,8 +115,8 @@ export default function AdminDetailJamaah() {
             
             <table className="data-table">
                 <tbody>
-                    <tr><td width="30%">Paket</td><td>{paket ? paket.nama : '-'}</td></tr>
-                    <tr><td>Jadwal</td><td>{jadwal ? jadwal.tanggal_keberangkatan : '-'}</td></tr>
+                    <tr><td width="30%">Paket</td><td>{paket ? (paket.name || paket.nama) : (jamaah.package_name || '-')}</td></tr>
+                    <tr><td>Keberangkatan</td><td>{paket?.departure_date ? new Date(paket.departure_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : (jadwal?.tanggal_keberangkatan || '-')}</td></tr>
                 </tbody>
             </table>
         </div>

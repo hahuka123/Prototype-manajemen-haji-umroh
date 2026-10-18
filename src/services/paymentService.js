@@ -3,20 +3,32 @@ import { supabase } from './supabase';
 const PAYMENT_BUCKET = 'payment-proofs';
 
 function mapPayment(p) {
+  if (!p) return null;
   return {
     id: p.id,
     jamaah_id: p.jamaah_id,
+    payment_method: p.payment_method,
     metode: p.payment_method,
+    payment_type: p.payment_type,
     jenis: p.payment_type,
-    nominal: p.amount,
-    bank_asal: p.bank_name,
-    no_referensi: p.reference_number,
+    amount: Number(p.amount || 0),
+    nominal: Number(p.amount || 0),
+    bank_name: p.bank_name || '',
+    bank_asal: p.bank_name || '',
+    reference_number: p.reference_number || '',
+    no_referensi: p.reference_number || '',
+    payment_date: p.payment_date,
     tanggal: p.payment_date,
     status: p.status,
+    proof_file_path: p.proof_file_path,
     bukti_url: p.proof_file_path,
+    admin_notes: p.admin_notes || '',
+    rejection_reason: p.rejection_reason || '',
     catatan_admin: p.admin_notes || p.rejection_reason || '',
     verified_by: p.verified_by,
     verified_at: p.verified_at,
+    created_at: p.created_at,
+    updated_at: p.updated_at
   };
 }
 
@@ -25,7 +37,7 @@ async function getJamaahBilling(jamaahId) {
     .from('v_jamaah_billing_summary')
     .select('*')
     .eq('jamaah_id', jamaahId)
-    .single();
+    .maybeSingle();
 
   if (error) throw error;
   return data;
@@ -44,7 +56,7 @@ async function uploadPaymentProof(file, jamaahId) {
   }
 
   const ext = file.name.split('.').pop().toLowerCase();
-  const path = `${jamaahId}/${crypto.randomUUID()}.${ext}`;
+  const path = `${jamaahId}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
 
   const { error } = await supabase.storage
     .from(PAYMENT_BUCKET)
@@ -69,14 +81,20 @@ const DEMO_PAYMENTS = [
     nominal: 10000000,
     amount: 10000000,
     bank_asal: 'Bank Syariah Indonesia (BSI)',
+    bank_name: 'Bank Syariah Indonesia (BSI)',
     no_referensi: 'TRX-BSI-99281',
+    reference_number: 'TRX-BSI-99281',
     tanggal: '2026-09-01',
     payment_date: '2026-09-01',
     status: 'verified',
     bukti_url: null,
+    proof_file_path: null,
     catatan_admin: 'Pembayaran DP Awal Paket Umrah terverifikasi.',
+    admin_notes: 'Pembayaran DP Awal Paket Umrah terverifikasi.',
     verified_by: 'demo-admin-id-123',
     verified_at: '2026-09-01T10:00:00Z',
+    jamaah_name: 'H. Muhammad Fauzan',
+    package_name: 'Umrah Reguler Awal Tahun 2027'
   },
   {
     id: 'demo-pay-2',
@@ -88,14 +106,20 @@ const DEMO_PAYMENTS = [
     nominal: 5000000,
     amount: 5000000,
     bank_asal: 'Bank Mandiri',
+    bank_name: 'Bank Mandiri',
     no_referensi: 'MDR-20260920-881',
+    reference_number: 'MDR-20260920-881',
     tanggal: '2026-09-20',
     payment_date: '2026-09-20',
     status: 'verified',
     bukti_url: null,
+    proof_file_path: null,
     catatan_admin: 'Cicilan ke-2 terverifikasi.',
+    admin_notes: 'Cicilan ke-2 terverifikasi.',
     verified_by: 'demo-admin-id-123',
     verified_at: '2026-09-20T14:30:00Z',
+    jamaah_name: 'H. Muhammad Fauzan',
+    package_name: 'Umrah Reguler Awal Tahun 2027'
   },
   {
     id: 'demo-pay-3',
@@ -107,14 +131,20 @@ const DEMO_PAYMENTS = [
     nominal: 5000000,
     amount: 5000000,
     bank_asal: 'Bank Syariah Indonesia (BSI)',
+    bank_name: 'Bank Syariah Indonesia (BSI)',
     no_referensi: 'BSI-20261002-109',
+    reference_number: 'BSI-20261002-109',
     tanggal: '2026-10-02',
     payment_date: '2026-10-02',
     status: 'pending',
     bukti_url: null,
+    proof_file_path: null,
     catatan_admin: '',
+    admin_notes: '',
     verified_by: null,
     verified_at: null,
+    jamaah_name: 'H. Muhammad Fauzan',
+    package_name: 'Umrah Reguler Awal Tahun 2027'
   }
 ];
 
@@ -145,14 +175,24 @@ export const paymentService = {
     try {
       const { data, error } = await supabase
         .from('payments')
-        .select('*')
+        .select(`
+          *,
+          jamaah (
+            profile_id,
+            profiles:profile_id ( full_name )
+          )
+        `)
         .order('payment_date', { ascending: false });
 
       if (error) {
         console.error('[paymentService] Error getAllPayments:', error.message);
         throw error;
       }
-      return (data || []).map(mapPayment);
+      return (data || []).map(p => {
+        const mapped = mapPayment(p);
+        mapped.jamaah_name = p.jamaah?.profiles?.full_name || 'Jamaah';
+        return mapped;
+      });
     } catch (e) {
       console.error('[paymentService] Exception getAllPayments:', e);
       throw e;
@@ -163,7 +203,15 @@ export const paymentService = {
     try {
       const { data, error } = await supabase
         .from('payments')
-        .select('*')
+        .select(`
+          *,
+          jamaah (
+            package_id,
+            profile_id,
+            packages:package_id ( name ),
+            profiles:profile_id ( full_name )
+          )
+        `)
         .eq('status', 'pending')
         .eq('payment_method', 'transfer')
         .order('payment_date', { ascending: false });
@@ -172,7 +220,12 @@ export const paymentService = {
         console.error('[paymentService] Error getPendingTransfers:', error.message);
         throw error;
       }
-      return (data || []).map(mapPayment);
+      return (data || []).map(p => {
+        const mapped = mapPayment(p);
+        mapped.jamaah_name = p.jamaah?.profiles?.full_name || 'Jamaah';
+        mapped.package_name = p.jamaah?.packages?.name || '-';
+        return mapped;
+      });
     } catch (e) {
       console.error('[paymentService] Exception getPendingTransfers:', e);
       throw e;
@@ -181,32 +234,39 @@ export const paymentService = {
 
   submitTransfer: async (payload) => {
     const jamaah = await getJamaahBilling(payload.jamaah_id);
+    const nominalNum = Number(payload.nominal ?? payload.amount ?? 0);
+    const sisa = Number(jamaah?.sisa_tagihan ?? 0);
+    const jenis = payload.jenis ?? payload.payment_type ?? 'installment';
 
-    if (payload.jenis === 'full' && payload.nominal !== Number(jamaah.sisa_tagihan)) {
-      throw new Error('Bayar penuh harus sama dengan sisa tagihan.');
+    if (jenis === 'full' && sisa > 0 && nominalNum !== sisa) {
+      throw new Error(`Bayar penuh harus sama persis dengan sisa tagihan (Rp ${sisa.toLocaleString('id-ID')}).`);
     }
 
-    if (payload.nominal <= 0 || payload.nominal > Number(jamaah.sisa_tagihan)) {
+    if (nominalNum <= 0 || (sisa > 0 && nominalNum > sisa)) {
       throw new Error(
-        `Nominal tidak valid. Sisa tagihan: Rp ${Number(jamaah.sisa_tagihan).toLocaleString('id-ID')}`
+        `Nominal tidak valid. Sisa tagihan: Rp ${sisa.toLocaleString('id-ID')}`
       );
     }
 
+    const proofFile = payload.bukti_file ?? payload.file;
     const proofPath = await uploadPaymentProof(
-      payload.bukti_file,
+      proofFile,
       payload.jamaah_id
     );
+
+    const tgl = payload.tanggal ?? payload.payment_date;
+    const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
 
     const { data, error } = await supabase
       .from('payments')
       .insert([{
         jamaah_id: payload.jamaah_id,
-        amount: payload.nominal,
-        payment_type: payload.jenis,
+        amount: nominalNum,
+        payment_type: jenis,
         payment_method: 'transfer',
-        payment_date: payload.tanggal || new Date().toISOString().slice(0, 10),
-        bank_name: payload.bank_asal,
-        reference_number: payload.no_referensi || null,
+        payment_date: paymentDate,
+        bank_name: payload.bank_asal ?? payload.bank_name ?? null,
+        reference_number: payload.no_referensi ?? payload.reference_number ?? null,
         proof_file_path: proofPath,
         status: 'pending',
       }])
@@ -214,45 +274,54 @@ export const paymentService = {
       .single();
 
     if (error) {
-      // Jika insert gagal, hapus file agar tidak menjadi file yatim.
       await supabase.storage.from(PAYMENT_BUCKET).remove([proofPath]);
+      console.error('[paymentService] Error submitTransfer:', error.message);
       throw error;
     }
 
-    return data;
+    return mapPayment(data);
   },
 
   submitCash: async (payload, adminId) => {
     const jamaah = await getJamaahBilling(payload.jamaah_id);
+    const nominalNum = Number(payload.nominal ?? payload.amount ?? 0);
+    const sisa = Number(jamaah?.sisa_tagihan ?? 0);
+    const jenis = payload.jenis ?? payload.payment_type ?? 'installment';
 
-    if (payload.jenis === 'full' && payload.nominal !== Number(jamaah.sisa_tagihan)) {
-      throw new Error('Bayar penuh harus sama dengan sisa tagihan.');
+    if (jenis === 'full' && sisa > 0 && nominalNum !== sisa) {
+      throw new Error(`Bayar penuh harus sama persis dengan sisa tagihan (Rp ${sisa.toLocaleString('id-ID')}).`);
     }
 
-    if (payload.nominal <= 0 || payload.nominal > Number(jamaah.sisa_tagihan)) {
+    if (nominalNum <= 0 || (sisa > 0 && nominalNum > sisa)) {
       throw new Error(
-        `Nominal tidak valid. Sisa tagihan: Rp ${Number(jamaah.sisa_tagihan).toLocaleString('id-ID')}`
+        `Nominal tidak valid. Sisa tagihan: Rp ${sisa.toLocaleString('id-ID')}`
       );
     }
+
+    const tgl = payload.tanggal ?? payload.payment_date;
+    const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
 
     const { data, error } = await supabase
       .from('payments')
       .insert([{
         jamaah_id: payload.jamaah_id,
-        amount: payload.nominal,
-        payment_type: payload.jenis,
+        amount: nominalNum,
+        payment_type: jenis,
         payment_method: 'cash',
-        payment_date: payload.tanggal || new Date().toISOString().slice(0, 10),
+        payment_date: paymentDate,
         status: 'verified',
-        admin_notes: payload.catatan || null,
-        verified_by: adminId,
+        admin_notes: (payload.catatan ?? payload.admin_notes ?? '').trim() || 'Pembayaran tunai di kantor biro',
+        verified_by: adminId || null,
         verified_at: new Date().toISOString(),
       }])
       .select()
       .single();
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      console.error('[paymentService] Error submitCash:', error.message);
+      throw error;
+    }
+    return mapPayment(data);
   },
 
   verifyTransfer: async (paymentId, adminId, status, catatan) => {
@@ -262,14 +331,15 @@ export const paymentService = {
 
     const updateData = {
       status,
-      verified_by: adminId,
+      verified_by: adminId || null,
       verified_at: new Date().toISOString(),
     };
 
     if (status === 'rejected') {
-      updateData.rejection_reason = catatan || 'Pembayaran ditolak admin.';
+      updateData.rejection_reason = (catatan || '').trim() || 'Pembayaran ditolak admin.';
+      updateData.admin_notes = null;
     } else {
-      updateData.admin_notes = catatan || null;
+      updateData.admin_notes = (catatan || '').trim() || 'Pembayaran diverifikasi admin.';
       updateData.rejection_reason = null;
     }
 
@@ -282,17 +352,28 @@ export const paymentService = {
       .select()
       .single();
 
-    if (error) throw error;
-    return data;
+    if (error) {
+      console.error('[paymentService] Error verifyTransfer:', error.message);
+      throw error;
+    }
+    return mapPayment(data);
   },
 
   getPaymentProofUrl: async (path) => {
     if (!path) return null;
-    const { data, error } = await supabase.storage
-      .from(PAYMENT_BUCKET)
-      .createSignedUrl(path, 300);
+    try {
+      const { data, error } = await supabase.storage
+        .from(PAYMENT_BUCKET)
+        .createSignedUrl(path, 300);
 
-    if (error) throw error;
-    return data.signedUrl;
+      if (error) {
+        console.warn('Gagal membuat signed URL pembayaran:', error.message);
+        return null;
+      }
+      return data?.signedUrl || null;
+    } catch (e) {
+      console.warn('Exception getPaymentProofUrl:', e);
+      return null;
+    }
   },
 };

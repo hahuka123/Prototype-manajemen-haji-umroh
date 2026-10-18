@@ -23,6 +23,10 @@ export default function AdminJadwal() {
   const [packages, setPackages] = useState([]);
   const [selectedPackageId, setSelectedPackageId] = useState(initialPackageFilter);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -39,6 +43,7 @@ export default function AdminJadwal() {
 
   async function loadData() {
     setLoading(true);
+    setLoadError('');
     try {
       const [pkgs, schs] = await Promise.all([
         packageService.getAll(),
@@ -48,6 +53,7 @@ export default function AdminJadwal() {
       setSchedules(schs);
     } catch (e) {
       console.error(e);
+      setLoadError(e.message || 'Gagal memuat jadwal kegiatan.');
     } finally {
       setLoading(false);
     }
@@ -67,12 +73,12 @@ export default function AdminJadwal() {
   }
 
   const filteredSchedules = selectedPackageId
-    ? schedules.filter(s => s.package_id === selectedPackageId)
+    ? schedules.filter(s => (s.package_id || s.paket_id) === selectedPackageId)
     : schedules;
 
   function getPackageName(pkgId) {
     const pkg = packages.find(p => p.id === pkgId);
-    return pkg ? pkg.name : 'Paket Umum';
+    return pkg ? (pkg.name || pkg.nama) : 'Paket Umum';
   }
 
   function openCreateModal() {
@@ -92,19 +98,19 @@ export default function AdminJadwal() {
   function openEditModal(sch) {
     setEditingId(sch.id);
     setFormData({
-      package_id: sch.package_id,
-      date: sch.date,
-      time: sch.time?.slice(0, 5) || '08:00',
-      activity: sch.activity,
-      location: sch.location,
-      description: sch.description || ''
+      package_id: sch.package_id || sch.paket_id,
+      date: sch.date || sch.tanggal || sch.tanggal_keberangkatan,
+      time: sch.time?.slice(0, 5) || sch.waktu?.slice(0, 5) || '08:00',
+      activity: sch.activity || sch.kegiatan || '',
+      location: sch.location || sch.lokasi || '',
+      description: sch.description || sch.deskripsi || ''
     });
     setErrorMsg('');
     setIsModalOpen(true);
   }
 
   async function handleSubmit(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setErrorMsg('');
 
     if (!formData.package_id) {
@@ -117,15 +123,26 @@ export default function AdminJadwal() {
       return;
     }
 
+    if (!formData.date) {
+      setErrorMsg('Tanggal pelaksanaan wajib diisi.');
+      return;
+    }
+
+    if (!formData.location.trim()) {
+      setErrorMsg('Lokasi kegiatan wajib diisi.');
+      return;
+    }
+
     const payload = {
       package_id: formData.package_id,
       date: formData.date,
-      time: formData.time,
+      time: formData.time || '08:00',
       activity: formData.activity.trim(),
       location: formData.location.trim(),
       description: formData.description.trim()
     };
 
+    setSubmitting(true);
     try {
       if (editingId) {
         await scheduleService.update(editingId, payload);
@@ -135,14 +152,28 @@ export default function AdminJadwal() {
       setIsModalOpen(false);
       await loadData();
     } catch (err) {
+      console.error(err);
       setErrorMsg(err.message || 'Gagal menyimpan agenda kegiatan.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function handleDelete(id, title) {
-    if (confirm(`Hapus agenda kegiatan "${title}"?`)) {
+    if (!window.confirm(`Hapus agenda kegiatan "${title}"?`)) {
+      return;
+    }
+    setActionError('');
+    setDeletingId(id);
+    try {
       await scheduleService.delete(id);
       await loadData();
+    } catch (err) {
+      console.error(err);
+      setActionError(err.message || 'Gagal menghapus kegiatan.');
+      alert(err.message || 'Gagal menghapus kegiatan.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -161,6 +192,42 @@ export default function AdminJadwal() {
         </div>
       </div>
 
+      {actionError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: 'var(--radius-md)',
+          color: '#b91c1c',
+          fontSize: '0.9rem',
+          marginBottom: '20px'
+        }}>
+          <AlertCircle size={18} />
+          <span>{actionError}</span>
+        </div>
+      )}
+
+      {loadError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: 'var(--radius-md)',
+          color: '#b91c1c',
+          fontSize: '0.9rem',
+          marginBottom: '20px'
+        }}>
+          <AlertCircle size={18} />
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {/* Filter Paket Bar */}
       <div className="card" style={{ marginBottom: '20px', padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
@@ -176,7 +243,7 @@ export default function AdminJadwal() {
               <option value="">Semua Paket ({schedules.length} Agenda)</option>
               {packages.map(p => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.name || p.nama}
                 </option>
               ))}
             </select>
@@ -237,7 +304,7 @@ export default function AdminJadwal() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                   <div>
                     <span style={{ fontSize: '0.78rem', color: 'var(--accent-700)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      {getPackageName(item.package_id)}
+                      {getPackageName(item.package_id || item.paket_id)}
                     </span>
                     <h3 style={{ fontSize: '1.2rem', margin: '4px 0 6px', color: 'var(--text-main)' }}>
                       {item.activity}
@@ -247,6 +314,7 @@ export default function AdminJadwal() {
                     <button 
                       className="btn btn-secondary btn-sm"
                       onClick={() => openEditModal(item)}
+                      disabled={deletingId === item.id}
                     >
                       <Edit3 size={14} /> Ubah
                     </button>
@@ -254,6 +322,7 @@ export default function AdminJadwal() {
                       className="btn btn-secondary btn-sm"
                       style={{ color: '#dc2626' }}
                       onClick={() => handleDelete(item.id, item.activity)}
+                      disabled={deletingId === item.id}
                       title="Hapus agenda"
                     >
                       <Trash2 size={14} />
@@ -274,7 +343,7 @@ export default function AdminJadwal() {
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Clock size={15} color="var(--primary-700)" />
-                    {item.time}
+                    {item.time?.slice(0, 5)}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <MapPin size={15} color="var(--primary-700)" />
@@ -290,13 +359,13 @@ export default function AdminJadwal() {
       {/* Modal Tambah / Edit Jadwal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !submitting && setIsModalOpen(false)}
         title={editingId ? 'Ubah Agenda Perjalanan' : 'Tambah Agenda Kegiatan Baru'}
         footer={(
           <>
-            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>Batal</button>
-            <button className="btn btn-primary" onClick={handleSubmit}>
-              {editingId ? 'Simpan Perubahan' : 'Simpan Kegiatan'}
+            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={submitting}>Batal</button>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Menyimpan...' : (editingId ? 'Simpan Perubahan' : 'Simpan Kegiatan')}
             </button>
           </>
         )}
@@ -330,7 +399,7 @@ export default function AdminJadwal() {
             >
               <option value="">-- Pilih Paket --</option>
               {packages.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>{p.name || p.nama}</option>
               ))}
             </select>
           </div>
@@ -360,12 +429,11 @@ export default function AdminJadwal() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Waktu (Jam & Zona)</label>
+              <label className="form-label">Waktu (Jam:Menit)</label>
               <input
-                type="text"
+                type="time"
                 required
                 className="form-input"
-                placeholder="Contoh: 08:00 WIB atau 14:00 WAS"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
               />

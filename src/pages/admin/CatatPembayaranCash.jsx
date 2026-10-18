@@ -66,13 +66,14 @@ export default function AdminCatatPembayaranCash() {
     }
 
     try {
+        const adminId = user?.id || null;
         await paymentService.submitCash({
             jamaah_id: selectedJamaahId,
             jenis: paymentType,
             nominal: num,
             catatan: notes,
-            tanggal: new Date(paymentDate).toISOString()
-        }, user.id);
+            tanggal: paymentDate
+        }, adminId);
         
         setIsSuccess(true);
         setTimeout(() => {

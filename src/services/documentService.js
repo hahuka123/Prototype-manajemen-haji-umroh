@@ -1,16 +1,15 @@
 import { supabase } from './supabase';
-import { jamaahService } from './jamaahService';
 
 const REQUIRED_DOCUMENTS = ['ktp', 'kk', 'passport', 'foto', 'buku-nikah', 'kesehatan'];
 const DOCUMENTS_BUCKET = 'documents';
 
 const DEMO_DOCUMENTS = [
-  { id: 'demo-doc-1', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'ktp', status: 'Lengkap', catatan: 'KTP jelas dan terverifikasi.', url: null, updated_at: '2026-09-10' },
-  { id: 'demo-doc-2', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'kk', status: 'Lengkap', catatan: 'Kartu Keluarga terverifikasi.', url: null, updated_at: '2026-09-10' },
-  { id: 'demo-doc-3', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'passport', status: 'Lengkap', catatan: 'Paspor aktif (masa berlaku > 12 bulan).', url: null, updated_at: '2026-09-12' },
-  { id: 'demo-doc-4', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'foto', status: 'Lengkap', catatan: 'Pas foto 4x6 latar putih 80% wajah.', url: null, updated_at: '2026-09-12' },
-  { id: 'demo-doc-5', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'buku-nikah', status: 'Menunggu Verifikasi', catatan: '', url: null, updated_at: '2026-09-28' },
-  { id: 'demo-doc-6', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'kesehatan', status: 'Belum Ada', catatan: '', url: null, updated_at: null },
+  { id: 'demo-doc-1', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'ktp', document_type: 'ktp', status: 'Lengkap', catatan: 'KTP jelas dan terverifikasi.', notes: 'KTP jelas dan terverifikasi.', url: null, updated_at: '2026-09-10' },
+  { id: 'demo-doc-2', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'kk', document_type: 'kk', status: 'Lengkap', catatan: 'Kartu Keluarga terverifikasi.', notes: 'Kartu Keluarga terverifikasi.', url: null, updated_at: '2026-09-10' },
+  { id: 'demo-doc-3', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'passport', document_type: 'passport', status: 'Lengkap', catatan: 'Paspor aktif (masa berlaku > 12 bulan).', notes: 'Paspor aktif (masa berlaku > 12 bulan).', url: null, updated_at: '2026-09-12' },
+  { id: 'demo-doc-4', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'foto', document_type: 'foto', status: 'Lengkap', catatan: 'Pas foto 4x6 latar putih 80% wajah.', notes: 'Pas foto 4x6 latar putih 80% wajah.', url: null, updated_at: '2026-09-12' },
+  { id: 'demo-doc-5', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'buku-nikah', document_type: 'buku-nikah', status: 'Menunggu Verifikasi', catatan: '', notes: '', url: null, updated_at: '2026-09-28' },
+  { id: 'demo-doc-6', jamaah_id: 'demo-jamaah-uuid-001', tipe: 'kesehatan', document_type: 'kesehatan', status: 'Belum Ada', catatan: '', notes: '', url: null, updated_at: null },
 ];
 
 export const documentService = {
@@ -70,8 +69,10 @@ export const documentService = {
                 id: existing.id,
                 jamaah_id: existing.jamaah_id,
                 tipe: existing.document_type,
+                document_type: existing.document_type,
                 status: existing.status,
                 catatan: existing.notes || '',
+                notes: existing.notes || '',
                 url: signedUrl,
                 file_path: existing.file_path,
                 updated_at: existing.updated_at
@@ -81,8 +82,10 @@ export const documentService = {
           id: `empty-${tipe}`,
           jamaah_id: jamaahId,
           tipe: tipe,
+          document_type: tipe,
           status: 'Belum Ada',
           catatan: '',
+          notes: '',
           url: null
         };
       }));
@@ -98,9 +101,10 @@ export const documentService = {
 
   // Upload a document (Jamaah)
   uploadDocument: async (jamaahId, tipe, file) => {
+    const docType = tipe;
     // 1. Upload to Storage (Private)
     const fileExt = file.name.split('.').pop();
-    const fileName = `${jamaahId}_${tipe}_${Date.now()}.${fileExt}`;
+    const fileName = `${jamaahId}_${docType}_${Date.now()}.${fileExt}`;
     const filePath = `${jamaahId}/${fileName}`;
 
     const { error: uploadError } = await supabase.storage
@@ -116,8 +120,8 @@ export const documentService = {
         .from('documents')
         .select('id')
         .eq('jamaah_id', jamaahId)
-        .eq('document_type', tipe)
-        .single();
+        .eq('document_type', docType)
+        .maybeSingle();
         
     let dbResponse;
 
@@ -137,7 +141,7 @@ export const documentService = {
             .from('documents')
             .insert([{
                 jamaah_id: jamaahId,
-                document_type: tipe,
+                document_type: docType,
                 file_path: filePath,
                 status: 'Menunggu Verifikasi',
                 notes: ''
@@ -155,8 +159,10 @@ export const documentService = {
       id: newDoc.id,
       jamaah_id: newDoc.jamaah_id,
       tipe: newDoc.document_type,
+      document_type: newDoc.document_type,
       status: newDoc.status,
       catatan: newDoc.notes || '',
+      notes: newDoc.notes || '',
       url: signedUrl,
       file_path: newDoc.file_path,
       updated_at: newDoc.updated_at
@@ -165,20 +171,22 @@ export const documentService = {
 
   // Verify document (Admin)
   verifyDocument: async (jamaahId, tipe, status, catatan = '') => {
-    const { data: existing } = await supabase
+    const docType = tipe;
+    const { data: existing, error: findError } = await supabase
         .from('documents')
         .select('id, file_path')
         .eq('jamaah_id', jamaahId)
-        .eq('document_type', tipe)
-        .single();
+        .eq('document_type', docType)
+        .maybeSingle();
         
-    if (!existing) throw new Error('Document not found');
+    if (findError) throw findError;
+    if (!existing) throw new Error('Dokumen tidak ditemukan.');
     
     const { data, error } = await supabase
         .from('documents')
         .update({
             status: status,
-            notes: catatan,
+            notes: catatan || null,
             verified_at: status === 'Lengkap' ? new Date().toISOString() : null
         })
         .eq('id', existing.id)
@@ -196,8 +204,10 @@ export const documentService = {
       id: data.id,
       jamaah_id: data.jamaah_id,
       tipe: data.document_type,
+      document_type: data.document_type,
       status: data.status,
       catatan: data.notes || '',
+      notes: data.notes || '',
       url: signedUrl,
       file_path: data.file_path,
       updated_at: data.updated_at
@@ -218,9 +228,12 @@ export const documentService = {
         .eq('status', 'Menunggu Verifikasi')
         .order('updated_at', { ascending: false });
         
-    if (error) throw error;
+    if (error) {
+      console.error('[documentService] getPendingVerifications error:', error.message);
+      throw error;
+    }
     
-    return Promise.all(data.map(async (d) => {
+    return Promise.all((data || []).map(async (d) => {
         let signedUrl = null;
         if (d.file_path) {
           signedUrl = await documentService.getDocumentUrl(d.file_path);
@@ -229,8 +242,10 @@ export const documentService = {
           id: d.id,
           jamaah_id: d.jamaah_id,
           tipe: d.document_type,
+          document_type: d.document_type,
           status: d.status,
           catatan: d.notes || '',
+          notes: d.notes || '',
           url: signedUrl,
           file_path: d.file_path,
           updated_at: d.updated_at,

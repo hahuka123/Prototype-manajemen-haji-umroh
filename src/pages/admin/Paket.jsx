@@ -17,10 +17,14 @@ export default function AdminPaket() {
   const navigate = useNavigate();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [deletingId, setDeletingId] = useState(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     type: 'Umrah Reguler',
@@ -34,11 +38,13 @@ export default function AdminPaket() {
 
   async function loadPackages() {
     setLoading(true);
+    setLoadError('');
     try {
       const data = await packageService.getAll();
       setPackages(data);
     } catch (e) {
       console.error(e);
+      setLoadError(e.message || 'Gagal memuat daftar paket perjalanan.');
     } finally {
       setLoading(false);
     }
@@ -93,27 +99,31 @@ export default function AdminPaket() {
   function openEditModal(pkg) {
     setEditingId(pkg.id);
     setFormData({
-      name: pkg.name,
-      type: pkg.type,
-      price: String(pkg.price),
-      departure_date: pkg.departure_date,
-      return_date: pkg.return_date,
-      duration: String(pkg.duration),
-      description: pkg.description || ''
+      name: pkg.name || pkg.nama || '',
+      type: pkg.type || pkg.tipe || 'Umrah Reguler',
+      price: String(pkg.price ?? pkg.harga ?? ''),
+      departure_date: pkg.departure_date || pkg.tanggal_keberangkatan || '',
+      return_date: pkg.return_date || pkg.tanggal_kepulangan || '',
+      duration: String(pkg.duration ?? pkg.durasi_hari ?? ''),
+      description: pkg.description || pkg.deskripsi || ''
     });
     setErrorMsg('');
     setIsModalOpen(true);
   }
 
   async function handleSubmit(e) {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setErrorMsg('');
 
-    const priceNum = Number(formData.price);
-    const durNum = Number(formData.duration);
+    const trimmedName = formData.name.trim();
+    if (!trimmedName) {
+      setErrorMsg('Nama paket tidak boleh kosong.');
+      return;
+    }
 
-    if (priceNum <= 0) {
-      setErrorMsg('Harga paket harus lebih besar dari 0.');
+    const priceNum = Number(formData.price);
+    if (!formData.price || isNaN(priceNum) || priceNum <= 0) {
+      setErrorMsg('Harga paket harus berupa angka lebih besar dari 0.');
       return;
     }
 
@@ -127,16 +137,23 @@ export default function AdminPaket() {
       return;
     }
 
+    const durNum = Number(formData.duration);
+    if (!formData.duration || isNaN(durNum) || durNum <= 0) {
+      setErrorMsg('Durasi hari harus berupa angka lebih besar dari 0.');
+      return;
+    }
+
     const payload = {
-      name: formData.name.trim(),
+      name: trimmedName,
       type: formData.type,
       price: priceNum,
       departure_date: formData.departure_date,
       return_date: formData.return_date,
-      duration: durNum || 1,
+      duration: durNum,
       description: formData.description.trim()
     };
 
+    setSubmitting(true);
     try {
       if (editingId) {
         await packageService.update(editingId, payload);
@@ -146,14 +163,28 @@ export default function AdminPaket() {
       setIsModalOpen(false);
       await loadPackages();
     } catch (err) {
-      setErrorMsg(err.message || 'Gagal menyimpan paket.');
+      console.error(err);
+      setErrorMsg(err.message || 'Gagal menyimpan paket ke database.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function handleDelete(id, name) {
-    if (confirm(`Apakah Anda yakin ingin menghapus paket "${name}"? Seluruh jadwal terkait juga akan terpengaruh.`)) {
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus paket "${name}"? Pastikan tidak ada data jamaah atau jadwal yang terikat.`)) {
+      return;
+    }
+    setActionError('');
+    setDeletingId(id);
+    try {
       await packageService.delete(id);
       await loadPackages();
+    } catch (err) {
+      console.error('Delete error:', err);
+      setActionError(err.message || 'Gagal menghapus paket.');
+      alert(err.message || 'Gagal menghapus paket.');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -171,6 +202,42 @@ export default function AdminPaket() {
           </button>
         </div>
       </div>
+
+      {actionError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: 'var(--radius-md)',
+          color: '#b91c1c',
+          fontSize: '0.9rem',
+          marginBottom: '20px'
+        }}>
+          <AlertCircle size={18} />
+          <span>{actionError}</span>
+        </div>
+      )}
+
+      {loadError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: 'var(--radius-md)',
+          color: '#b91c1c',
+          fontSize: '0.9rem',
+          marginBottom: '20px'
+        }}>
+          <AlertCircle size={18} />
+          <span>{loadError}</span>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -229,6 +296,7 @@ export default function AdminPaket() {
                   className="btn btn-secondary btn-sm" 
                   style={{ flex: 1 }}
                   onClick={() => openEditModal(pkg)}
+                  disabled={deletingId === pkg.id}
                 >
                   <Edit3 size={14} />
                   <span>Ubah</span>
@@ -237,6 +305,7 @@ export default function AdminPaket() {
                   className="btn btn-primary btn-sm" 
                   style={{ flex: 2 }}
                   onClick={() => navigate(`/admin/jadwal?packageId=${pkg.id}`)}
+                  disabled={deletingId === pkg.id}
                 >
                   <CalendarDays size={14} />
                   <span>Kelola Jadwal</span>
@@ -246,6 +315,7 @@ export default function AdminPaket() {
                   style={{ color: '#dc2626', padding: '6px 10px' }}
                   title="Hapus paket"
                   onClick={() => handleDelete(pkg.id, pkg.name)}
+                  disabled={deletingId === pkg.id}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -258,13 +328,13 @@ export default function AdminPaket() {
       {/* Modal Form Tambah / Edit Paket */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !submitting && setIsModalOpen(false)}
         title={editingId ? 'Ubah Rincian Paket' : 'Buat Paket Perjalanan Baru'}
         footer={(
           <>
-            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)}>Batal</button>
-            <button className="btn btn-primary" onClick={handleSubmit}>
-              {editingId ? 'Simpan Perubahan' : 'Buat Paket'}
+            <button className="btn btn-secondary" onClick={() => setIsModalOpen(false)} disabled={submitting}>Batal</button>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Menyimpan...' : (editingId ? 'Simpan Perubahan' : 'Buat Paket')}
             </button>
           </>
         )}

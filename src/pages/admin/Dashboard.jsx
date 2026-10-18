@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import StatCard from '../../components/StatCard';
-import { Users, FileCheck, CheckCircle, Clock, Calendar, AlertTriangle } from 'lucide-react';
+import { Users, FileCheck, CheckCircle, Clock, Calendar, AlertTriangle, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { jamaahService } from '../../services/jamaahService';
 import { documentService } from '../../services/documentService';
@@ -10,81 +10,90 @@ import { packageService } from '../../services/packageService';
 
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState({
-      totalJamaah: 0,
-      jamaahAktif: 0,
-      dokumenLengkap: 0,
-      totalLunas: 0,
-      totalCicilan: 0,
-      totalBelumBayar: 0,
-      pendingVerifikasi: 0
+    totalJamaah: 0,
+    jamaahAktif: 0,
+    dokumenLengkap: 0,
+    totalLunas: 0,
+    totalCicilan: 0,
+    totalBelumBayar: 0,
+    pendingVerifikasi: 0
   });
   const [pendingPayments, setPendingPayments] = useState([]);
   const [terdekat, setTerdekat] = useState(null);
   const [paketMap, setPaketMap] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-      const fetchData = async () => {
-          try {
-              setLoading(true);
-              const [jamaahList, pendingDocs, pendingPays, schedules, pkgs] = await Promise.all([
-                  jamaahService.getJamaah(),
-                  documentService.getPendingVerifications(),
-                  paymentService.getPendingTransfers(),
-                  scheduleService.getSchedules(),
-                  packageService.getPackages()
-              ]);
-              
-              const pMap = {};
-              pkgs.forEach(p => pMap[p.id] = p.nama);
-              setPaketMap(pMap);
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setLoadError('');
+        const [jamaahList, pendingDocs, pendingPays, schedules, pkgs] = await Promise.all([
+          jamaahService.getJamaah(),
+          documentService.getPendingVerifications(),
+          paymentService.getPendingTransfers(),
+          scheduleService.getSchedules(),
+          packageService.getPackages()
+        ]);
+        
+        const pMap = {};
+        (pkgs || []).forEach(p => {
+          pMap[p.id] = p.name || p.nama;
+        });
+        setPaketMap(pMap);
 
-              let active = 0, lunas = 0, cicilan = 0, belum = 0, docFull = 0;
-              jamaahList.forEach(j => {
-                  if (j.status_keberangkatan !== 'Selesai') active++;
-                  if (j.status_pembayaran === 'Lunas') lunas++;
-                  else if (j.status_pembayaran === 'Cicilan') cicilan++;
-                  else belum++;
-                  if (j.dokumen_persentase === 100) docFull++;
-              });
+        let active = 0, lunas = 0, cicilan = 0, belum = 0, docFull = 0;
+        (jamaahList || []).forEach(j => {
+          if ((j.status_keberangkatan || j.status) !== 'Selesai') active++;
+          if (j.status_pembayaran === 'Lunas') lunas++;
+          else if (j.status_pembayaran === 'Cicilan') cicilan++;
+          else belum++;
+          if (Number(j.dokumen_persentase || 0) === 100) docFull++;
+        });
 
-              setMetrics({
-                  totalJamaah: jamaahList.length,
-                  jamaahAktif: active,
-                  dokumenLengkap: docFull,
-                  totalLunas: lunas,
-                  totalCicilan: cicilan,
-                  totalBelumBayar: belum,
-                  pendingVerifikasi: pendingPays.length
-              });
+        setMetrics({
+          totalJamaah: (jamaahList || []).length,
+          jamaahAktif: active,
+          dokumenLengkap: docFull,
+          totalLunas: lunas,
+          totalCicilan: cicilan,
+          totalBelumBayar: belum,
+          pendingVerifikasi: (pendingPays || []).length
+        });
 
-              // Enrich pending payments
-              const enriched = [];
-              for (const p of pendingPays.slice(0, 5)) { // take top 5
-                  const j = jamaahList.find(x => x.id === p.jamaah_id);
-                  enriched.push({
-                      ...p,
-                      jamaah_name: j ? j.nama_lengkap : '-',
-                      package_name: j && j.paket_id ? pMap[j.paket_id] : '-'
-                  });
-              }
-              setPendingPayments(enriched);
+        // Enrich pending payments (top 5)
+        const enriched = (pendingPays || []).slice(0, 5).map(p => {
+          const j = (jamaahList || []).find(x => x.id === p.jamaah_id);
+          const pkgId = p.package_id || (j && (j.paket_id || j.package_id));
+          return {
+            ...p,
+            jamaah_name: p.jamaah_name || (j ? j.nama_lengkap : '-'),
+            package_name: p.package_name || (pkgId ? pMap[pkgId] : '-')
+          };
+        });
+        setPendingPayments(enriched);
 
-              // Find closest schedule
-              const now = new Date();
-              const upcoming = schedules.filter(s => new Date(s.tanggal_keberangkatan) >= now)
-                                        .sort((a, b) => new Date(a.tanggal_keberangkatan) - new Date(b.tanggal_keberangkatan));
-              if (upcoming.length > 0) {
-                  setTerdekat(upcoming[0]);
-              }
+        // Find closest schedule
+        const todayStr = new Date().toISOString().split('T')[0];
+        const upcoming = (schedules || [])
+          .filter(s => (s.date || s.tanggal || s.tanggal_keberangkatan) >= todayStr)
+          .sort((a, b) => (a.date || a.tanggal || a.tanggal_keberangkatan).localeCompare(b.date || b.tanggal || b.tanggal_keberangkatan));
+          
+        if (upcoming.length > 0) {
+          setTerdekat(upcoming[0]);
+        } else if ((schedules || []).length > 0) {
+          setTerdekat(schedules[0]);
+        }
 
-          } catch (err) {
-              console.error(err);
-          } finally {
-              setLoading(false);
-          }
-      };
-      fetchData();
+      } catch (err) {
+        console.error(err);
+        setLoadError(err.message || 'Gagal memuat metrik dashboard admin.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, []);
 
   return (
@@ -104,6 +113,24 @@ export default function AdminDashboard() {
           </Link>
         </div>
       </div>
+
+      {loadError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: 'var(--radius-md)',
+          color: '#b91c1c',
+          fontSize: '0.9rem',
+          marginBottom: '20px'
+        }}>
+          <AlertCircle size={18} />
+          <span>{loadError}</span>
+        </div>
+      )}
 
       {/* Grid Statistik Utama */}
       <div className="grid-cols-4">
@@ -142,14 +169,15 @@ export default function AdminDashboard() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <div style={{ fontSize: '0.8rem', color: '#a7f3d0', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
-              Jadwal Keberangkatan Terdekat
+              Jadwal Agenda Terdekat
             </div>
             <h2 style={{ color: '#fff', margin: '6px 0 4px', fontSize: '1.4rem' }}>
-              {terdekat ? (paketMap[terdekat.paket_id] || 'Paket Umum') : 'Belum Ada Jadwal'}
+              {terdekat ? (paketMap[terdekat.package_id || terdekat.paket_id] || terdekat.activity || 'Paket Umum') : 'Belum Ada Jadwal'}
             </h2>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Calendar size={16} /> {terdekat ? new Date(terdekat.tanggal_keberangkatan).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : '-'} 
-              {terdekat ? ` • Pesawat ${terdekat.maskapai}` : ''}
+              <Calendar size={16} /> {terdekat ? new Date(terdekat.date || terdekat.tanggal || terdekat.tanggal_keberangkatan).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : '-'} 
+              {terdekat?.activity ? ` • ${terdekat.activity}` : ''}
+              {terdekat?.time ? ` (${terdekat.time.slice(0, 5)})` : ''}
             </p>
           </div>
           <Link to="/admin/jadwal" className="btn btn-accent" style={{ color: '#fff' }}>
@@ -188,28 +216,28 @@ export default function AdminDashboard() {
             </thead>
             <tbody>
               {loading ? (
-                  <tr><td colSpan="8" style={{ textAlign: 'center' }}>Loading...</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '30px' }}>Memuat data antrean...</td></tr>
               ) : pendingPayments.length === 0 ? (
-                  <tr><td colSpan="8" style={{ textAlign: 'center' }}>Tidak ada antrean verifikasi transfer.</td></tr>
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>Tidak ada antrean verifikasi transfer.</td></tr>
               ) : (
-                  pendingPayments.map(p => (
-                    <tr key={p.id}>
-                      <td style={{ fontWeight: 600 }}>{p.jamaah_name}</td>
-                      <td>{p.package_name}</td>
-                      <td style={{ fontWeight: 700 }}>Rp {p.nominal.toLocaleString('id-ID')}</td>
-                      <td style={{ textTransform: 'capitalize' }}>Transfer ({p.jenis})</td>
-                      <td>{p.bank_asal}</td>
-                      <td><code>{p.no_referensi}</code></td>
-                      <td>
-                        <span className="status-badge pending">Menunggu Verifikasi</span>
-                      </td>
-                      <td>
-                        <Link to="/admin/pembayaran/verifikasi" className="btn btn-primary btn-sm">
-                          Periksa
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
+                pendingPayments.map(p => (
+                  <tr key={p.id}>
+                    <td style={{ fontWeight: 600 }}>{p.jamaah_name}</td>
+                    <td>{p.package_name}</td>
+                    <td style={{ fontWeight: 700 }}>Rp {Number(p.amount || p.nominal || 0).toLocaleString('id-ID')}</td>
+                    <td style={{ textTransform: 'capitalize' }}>Transfer ({p.payment_type || p.jenis})</td>
+                    <td>{p.bank_name || p.bank_asal || '-'}</td>
+                    <td><code>{p.reference_number || p.no_referensi || '-'}</code></td>
+                    <td>
+                      <span className="status-badge pending">Menunggu Verifikasi</span>
+                    </td>
+                    <td>
+                      <Link to="/admin/pembayaran/verifikasi" className="btn btn-primary btn-sm">
+                        Periksa
+                      </Link>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

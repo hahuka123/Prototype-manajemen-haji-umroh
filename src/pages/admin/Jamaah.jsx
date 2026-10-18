@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Search, Filter, Eye } from 'lucide-react';
+import { UserPlus, Search, Filter, Eye, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
@@ -8,21 +8,26 @@ export default function AdminJamaah() {
   const [jamaahList, setJamaahList] = useState([]);
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPackage, setSelectedPackage] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setLoadError('');
         const [jData, pData] = await Promise.all([
-            jamaahService.getJamaah(),
-            packageService.getPackages()
+          jamaahService.getJamaah(),
+          packageService.getPackages()
         ]);
         setJamaahList(jData);
         setPackages(pData);
       } catch (err) {
         console.error(err);
+        setLoadError(err.message || 'Gagal memuat data jamaah.');
       } finally {
         setLoading(false);
       }
@@ -31,8 +36,8 @@ export default function AdminJamaah() {
   }, []);
 
   const getPackageName = (id) => {
-      const p = packages.find(pkg => pkg.id === id);
-      return p ? p.nama : '-';
+    const p = packages.find(pkg => pkg.id === id);
+    return p ? (p.name || p.nama) : '-';
   };
 
   const getStatusBadgeClass = (status) => {
@@ -47,10 +52,14 @@ export default function AdminJamaah() {
     }
   };
 
-  const filteredJamaah = (jamaahList || []).filter(j => 
+  const filteredJamaah = (jamaahList || []).filter(j => {
+    const matchesSearch = 
       (j.nama_lengkap || '').toLowerCase().includes((searchTerm || '').toLowerCase()) || 
-      (j.nik || '').includes(searchTerm || '')
-  );
+      (j.nik || '').includes(searchTerm || '');
+    const matchesPackage = !selectedPackage || (j.paket_id || j.package_id) === selectedPackage;
+    const matchesStatus = !selectedStatus || (j.status_keberangkatan || j.status) === selectedStatus;
+    return matchesSearch && matchesPackage && matchesStatus;
+  });
 
   return (
     <div>
@@ -59,13 +68,25 @@ export default function AdminJamaah() {
           <h1>Manajemen Data Jamaah</h1>
           <p>Kelola data identitas, NIK, dokumen, dan keberangkatan seluruh jamaah.</p>
         </div>
-        <div>
-          <button className="btn btn-primary">
-            <UserPlus size={18} />
-            <span>+ Daftarkan Jamaah Baru</span>
-          </button>
-        </div>
       </div>
+
+      {loadError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          padding: '12px 16px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          borderRadius: 'var(--radius-md)',
+          color: '#b91c1c',
+          fontSize: '0.9rem',
+          marginBottom: '20px'
+        }}>
+          <AlertCircle size={18} />
+          <span>{loadError}</span>
+        </div>
+      )}
 
       <div className="card">
         <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -80,15 +101,28 @@ export default function AdminJamaah() {
             />
             <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           </div>
-          <select className="form-select" style={{ width: 'auto' }}>
+          <select 
+            className="form-select" 
+            style={{ width: 'auto' }}
+            value={selectedPackage}
+            onChange={(e) => setSelectedPackage(e.target.value)}
+          >
             <option value="">Semua Paket</option>
-            {packages.map(p => <option key={p.id} value={p.id}>{p.nama}</option>)}
+            {packages.map(p => <option key={p.id} value={p.id}>{p.name || p.nama}</option>)}
           </select>
-          <select className="form-select" style={{ width: 'auto' }}>
+          <select 
+            className="form-select" 
+            style={{ width: 'auto' }}
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+          >
             <option value="">Semua Status</option>
             <option value="Pendaftaran">Pendaftaran</option>
             <option value="Dokumen Diproses">Dokumen Diproses</option>
+            <option value="Belum Lunas">Belum Lunas</option>
             <option value="Siap Berangkat">Siap Berangkat</option>
+            <option value="Sudah Berangkat">Sudah Berangkat</option>
+            <option value="Selesai">Selesai</option>
           </select>
         </div>
 
@@ -106,32 +140,32 @@ export default function AdminJamaah() {
             </thead>
             <tbody>
               {loading ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center' }}>Loading...</td></tr>
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '30px' }}>Memuat data jamaah...</td></tr>
               ) : filteredJamaah.length === 0 ? (
-                  <tr><td colSpan="6" style={{ textAlign: 'center' }}>Tidak ada data jamaah.</td></tr>
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>Tidak ada data jamaah yang sesuai.</td></tr>
               ) : (
-                  filteredJamaah.map(j => (
-                      <tr key={j.id}>
-                        <td style={{ fontWeight: 600 }}>{j.nama_lengkap}</td>
-                        <td>{j.nik}</td>
-                        <td>{getPackageName(j.paket_id)}</td>
-                        <td><span className={`status-badge ${getStatusBadgeClass(j.status_keberangkatan)}`}>{j.status_keberangkatan}</span></td>
-                        <td>
-                            <strong style={{ color: j.dokumen_persentase === 100 ? 'var(--success-color)' : 'inherit' }}>
-                                {j.dokumen_persentase}%
-                            </strong>
-                        </td>
-                        <td>
-                            <button 
-                                className="btn btn-secondary btn-sm" 
-                                onClick={() => navigate(`/admin/jamaah/${j.id}`)}
-                                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                                <Eye size={14} /> Detail
-                            </button>
-                        </td>
-                      </tr>
-                  ))
+                filteredJamaah.map(j => (
+                  <tr key={j.id}>
+                    <td style={{ fontWeight: 600 }}>{j.nama_lengkap}</td>
+                    <td>{j.nik}</td>
+                    <td>{getPackageName(j.paket_id || j.package_id)}</td>
+                    <td><span className={`status-badge ${getStatusBadgeClass(j.status_keberangkatan)}`}>{j.status_keberangkatan}</span></td>
+                    <td>
+                      <strong style={{ color: j.dokumen_persentase === 100 ? 'var(--success-color)' : 'inherit' }}>
+                        {j.dokumen_persentase}%
+                      </strong>
+                    </td>
+                    <td>
+                      <button 
+                        className="btn btn-secondary btn-sm" 
+                        onClick={() => navigate(`/admin/jamaah/${j.id}`)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Eye size={14} /> Detail
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>

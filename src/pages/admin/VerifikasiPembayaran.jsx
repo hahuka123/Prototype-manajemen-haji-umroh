@@ -74,7 +74,8 @@ export default function AdminVerifikasiPembayaran() {
   async function handleVerify(trx) {
     if (confirm(`Verifikasi pembayaran dari ${trx.jamaah_name} sebesar Rp ${trx.nominal.toLocaleString('id-ID')}?`)) {
       try {
-          await paymentService.verifyTransfer(trx.id, user.id, 'verified', '');
+          const adminId = user?.id || null;
+          await paymentService.verifyTransfer(trx.id, adminId, 'verified', '');
           alert('Pembayaran berhasil diverifikasi! Dana telah sah masuk ke total terbayar.');
           fetchData();
       } catch (err) {
@@ -90,7 +91,8 @@ export default function AdminVerifikasiPembayaran() {
     }
     
     try {
-        await paymentService.verifyTransfer(selectedTrx.id, user.id, 'rejected', rejectionReason);
+        const adminId = user?.id || null;
+        await paymentService.verifyTransfer(selectedTrx.id, adminId, 'rejected', rejectionReason);
         alert(`Pembayaran ditolak dengan alasan: "${rejectionReason}". Jamaah akan menerima notifikasi status ditolak.`);
         setRejectModalOpen(false);
         setRejectionReason('');
