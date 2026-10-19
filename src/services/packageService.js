@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from './supabase.js';
 
 export const DEMO_PACKAGE = {
   id: 'demo-pkg-1',
