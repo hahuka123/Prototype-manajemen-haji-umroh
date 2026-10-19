@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-const DEMO_PACKAGE = {
+export const DEMO_PACKAGE = {
   id: 'demo-pkg-1',
   name: 'Umrah Reguler Awal Tahun 2027',
   nama: 'Umrah Reguler Awal Tahun 2027',
@@ -16,17 +16,123 @@ const DEMO_PACKAGE = {
   durasi_hari: 12,
   quota: 40,
   kuota: 40,
+  terisi: 15,
   description: 'Paket perjalanan ibadah Umrah 12 hari direct flight Jakarta - Madinah dengan hotel bintang 4.',
   deskripsi: 'Paket perjalanan ibadah Umrah 12 hari direct flight Jakarta - Madinah dengan hotel bintang 4.'
 };
+
+/**
+ * Memformat objek Date atau tanggal string (YYYY-MM-DD) ke dalam format bahasa Indonesia yang konsisten,
+ * misalnya: "27 Maret 2027".
+ * Memperhatikan timezone agar tidak terjadi pergeseran hari karena konversi UTC.
+ */
+export function formatIndoDate(dateInput) {
+  if (!dateInput) return null;
+  let d;
+  if (dateInput instanceof Date) {
+    d = dateInput;
+  } else if (typeof dateInput === 'string') {
+    const trimmed = dateInput.trim();
+    // Jika format tanggal YYYY-MM-DD murni, parse local date
+    const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      d = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+    } else {
+      d = new Date(trimmed);
+    }
+  } else {
+    d = new Date(dateInput);
+  }
+
+  if (isNaN(d.getTime())) return null;
+
+  return d.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+/**
+ * Menghitung dan memastikan tanggal kepulangan paket perjalanan:
+ * 1. Jika return_date ada di DB, gunakan nilai asli dari DB.
+ * 2. Jika return_date NULL / kosong, hitung berdasarkan departure_date + duration
+ *    dengan definisi durasi proyek inklusif: return = departure + (duration - 1) hari.
+ * 3. Jika departure_date atau duration tidak valid/kosong, kembalikan null (tidak membuat tanggal palsu).
+ */
+export function resolveReturnDate(pkg) {
+  if (!pkg) return null;
+
+  // 1. Cek return_date dari database
+  const rawReturn = pkg.return_date || pkg.tanggal_kepulangan;
+  if (rawReturn) {
+    if (rawReturn instanceof Date && !isNaN(rawReturn.getTime())) {
+      return rawReturn;
+    }
+    if (typeof rawReturn === 'string' && rawReturn.trim()) {
+      const match = rawReturn.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const parsed = match 
+        ? new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10))
+        : new Date(rawReturn);
+      if (!isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+  }
+
+  // 2. Jika return_date kosong/NULL, hitung dari departure_date dan duration jika valid
+  const rawDep = pkg.departure_date || pkg.tanggal_keberangkatan;
+  const rawDuration = Number(pkg.duration ?? pkg.durasi_hari);
+
+  if (rawDep && !isNaN(rawDuration) && rawDuration > 0) {
+    let depDate;
+    if (rawDep instanceof Date) {
+      depDate = rawDep;
+    } else if (typeof rawDep === 'string') {
+      const match = rawDep.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+      depDate = match 
+        ? new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10))
+        : new Date(rawDep);
+    } else {
+      depDate = new Date(rawDep);
+    }
+
+    if (!isNaN(depDate.getTime())) {
+      // Definisi durasi proyek: duration = (return - dep) + 1 hari
+      // Maka return = dep + (duration - 1) hari
+      const calculated = new Date(depDate.getTime());
+      calculated.setDate(calculated.getDate() + (rawDuration - 1));
+      return calculated;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Mengembalikan teks label tanggal kepulangan yang siap ditampilkan:
+ * Jika tanggal dapat dipastikan -> "27 Maret 2027"
+ * Jika tanggal tidak dapat dipastikan -> "Belum ditentukan"
+ */
+export function resolveReturnDateText(pkg) {
+  const d = resolveReturnDate(pkg);
+  if (!d) return 'Belum ditentukan';
+  return formatIndoDate(d) || 'Belum ditentukan';
+}
 
 function formatPackage(p, extraStats = {}) {
   if (!p) return null;
   const rawQuota = p.quota ?? p.kuota;
   const quota = rawQuota !== null && rawQuota !== undefined && rawQuota !== '' ? Number(rawQuota) : null;
   
-  const terisi = typeof extraStats.terisi === 'number' ? extraStats.terisi : (typeof p.terisi === 'number' ? p.terisi : 0);
+  const terisi = typeof extraStats.terisi === 'number' 
+    ? extraStats.terisi 
+    : (typeof p.terisi === 'number' ? p.terisi : 0);
   const sisa = quota !== null ? Math.max(0, quota - terisi) : null;
+
+  const returnDateObj = resolveReturnDate(p);
+  const formattedReturn = returnDateObj ? formatIndoDate(returnDateObj) : 'Belum ditentukan';
+  const formattedDeparture = p.departure_date ? formatIndoDate(p.departure_date) : '-';
 
   return {
     id: p.id,
@@ -36,10 +142,12 @@ function formatPackage(p, extraStats = {}) {
     tipe: p.type,
     price: Number(p.price || 0),
     harga: Number(p.price || 0),
-    departure_date: p.departure_date,
-    tanggal_keberangkatan: p.departure_date,
-    return_date: p.return_date,
-    tanggal_kepulangan: p.return_date,
+    departure_date: p.departure_date || null,
+    tanggal_keberangkatan: p.departure_date || null,
+    return_date: p.return_date || null,
+    tanggal_kepulangan: p.return_date || null,
+    formatted_departure_date: formattedDeparture,
+    formatted_return_date: formattedReturn,
     duration: Number(p.duration || 0),
     durasi_hari: Number(p.duration || 0),
     quota: quota,
@@ -70,22 +178,44 @@ export const packageService = {
       // Ambil data real jumlah pendaftar per paket dari tabel jamaah
       let counts = {};
       try {
-        const { data: jamaahList, error: jErr } = await supabase
-          .from('jamaah')
-          .select('id, package_id');
-        
-        if (!jErr && jamaahList) {
-          jamaahList.forEach(j => {
-            if (j.package_id) {
-              counts[j.package_id] = (counts[j.package_id] || 0) + 1;
+        // Coba panggil fungsi RPC agregat jika tersedia di database Supabase
+        const { data: statsData, error: statsErr } = await supabase
+          .rpc('get_packages_registered_counts');
+
+        if (!statsErr && Array.isArray(statsData)) {
+          statsData.forEach(row => {
+            if (row.package_id) {
+              counts[row.package_id] = Number(row.registered_count || 0);
             }
           });
+        } else {
+          // Fallback: Query tabel jamaah langsung dengan pencegahan duplikasi akun
+          const { data: jamaahList, error: jErr } = await supabase
+            .from('jamaah')
+            .select('id, profile_id, package_id, status');
+          
+          if (!jErr && jamaahList) {
+            const seenAccounts = new Set();
+            jamaahList.forEach(j => {
+              const accountKey = j.profile_id || j.id;
+              if (accountKey) {
+                if (seenAccounts.has(accountKey)) return;
+                seenAccounts.add(accountKey);
+              }
+              if (j.package_id) {
+                counts[j.package_id] = (counts[j.package_id] || 0) + 1;
+              }
+            });
+          }
         }
       } catch (countError) {
         console.warn('[packageService] Gagal menghitung jamaah terdaftar:', countError);
       }
       
-      return (data || []).map(p => formatPackage(p, { terisi: counts[p.id] || 0 }));
+      return (data || []).map(p => {
+        const terisiVal = counts[p.id] !== undefined ? counts[p.id] : (typeof p.terisi === 'number' ? p.terisi : 0);
+        return formatPackage(p, { terisi: terisiVal });
+      });
     } catch (e) {
       console.error('[packageService] Exception getAll:', e);
       throw e;
@@ -98,7 +228,7 @@ export const packageService = {
 
   async getById(id) {
     if (typeof id === 'string' && id.startsWith('demo-')) {
-      return formatPackage(DEMO_PACKAGE, { terisi: 1 });
+      return formatPackage(DEMO_PACKAGE, { terisi: 15 });
     }
 
     try {
@@ -113,12 +243,29 @@ export const packageService = {
       // Hitung pendaftar riil
       let terisi = 0;
       try {
-        const { count, error: countErr } = await supabase
-          .from('jamaah')
-          .select('id', { count: 'exact', head: true })
-          .eq('package_id', id);
-        if (!countErr && count !== null) {
-          terisi = count;
+        // 1. Coba via RPC spesifik jika tersedia
+        const { data: rpcCount, error: rpcErr } = await supabase
+          .rpc('get_package_registered_count', { target_package_id: id });
+        
+        if (!rpcErr && typeof rpcCount === 'number') {
+          terisi = rpcCount;
+        } else {
+          // 2. Fallback query tabel jamaah dengan deduplikasi akun
+          const { data: list, error: countErr } = await supabase
+            .from('jamaah')
+            .select('id, profile_id, status')
+            .eq('package_id', id);
+
+          if (!countErr && list) {
+            const seen = new Set();
+            list.forEach(j => {
+              const key = j.profile_id || j.id;
+              if (key && !seen.has(key)) {
+                seen.add(key);
+                terisi++;
+              }
+            });
+          }
         }
       } catch (errCount) {
         console.warn('[packageService] Gagal hitung pendaftar getById:', errCount);

@@ -4,7 +4,7 @@ import StatCard from '../../components/StatCard';
 import { CreditCard, FileCheck2, Calendar, AlertCircle, ArrowUpRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { jamaahService } from '../../services/jamaahService';
-import { packageService } from '../../services/packageService';
+import { packageService, formatIndoDate, resolveReturnDateText } from '../../services/packageService';
 import { scheduleService } from '../../services/scheduleService';
 import { documentService } from '../../services/documentService';
 import { paymentService } from '../../services/paymentService';
@@ -50,12 +50,19 @@ export default function JamaahDashboard() {
         const jamaahId = jData?.id;
 
         if (jData.paket_id) {
-          const pkgs = await packageService.getPackages();
-          setPaket(pkgs.find(p => p.id === jData.paket_id));
+          let pkg = null;
+          try {
+            pkg = await packageService.getById(jData.paket_id);
+          } catch (pkgErr) {
+            console.warn('[JamaahDashboard] Gagal getById, fallback ke getPackages:', pkgErr);
+            const pkgs = await packageService.getPackages();
+            pkg = pkgs.find(p => p.id === jData.paket_id) || null;
+          }
+          setPaket(pkg);
 
           const schedules = await scheduleService.getSchedules();
           setJadwal(
-            schedules.find(s => s.paket_id === jData.paket_id)
+            schedules.find(s => s.paket_id === jData.paket_id || s.package_id === jData.paket_id)
           );
         }
 
@@ -130,6 +137,25 @@ export default function JamaahDashboard() {
   };
 
   const hargaPaket = jamaah.total_terbayar + jamaah.sisa_tagihan;
+
+  // Resolusi tanggal keberangkatan dan kepulangan secara akurat
+  const departureDateText = (() => {
+    const rawDep = paket?.departure_date || paket?.tanggal_keberangkatan || jadwal?.tanggal_keberangkatan || jadwal?.date;
+    if (!rawDep) return 'Belum ditentukan';
+    return formatIndoDate(rawDep) || 'Belum ditentukan';
+  })();
+
+  const returnDateText = (() => {
+    if (!paket) return 'Belum ditentukan';
+    return resolveReturnDateText(paket);
+  })();
+
+  // Resolusi kuota paket perjalanan
+  const quotaTotal = paket?.quota ?? paket?.kuota;
+  const hasQuota = quotaTotal !== null && quotaTotal !== undefined;
+  const registeredCount = Number(paket?.terisi || 0);
+  const remainingQuota = hasQuota ? Math.max(0, quotaTotal - registeredCount) : null;
+  const isPenuh = hasQuota ? (registeredCount >= quotaTotal || Boolean(paket?.is_penuh)) : false;
 
   return (
     <div>
@@ -209,7 +235,36 @@ export default function JamaahDashboard() {
       {/* Info Paket & Keberangkatan */}
       <div className="grid-cols-2">
         <div className="card">
-          <h3 style={{ marginBottom: '14px', fontSize: '1.1rem' }}>Paket Perjalanan Anda</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Paket Perjalanan Anda</h3>
+            {paket && isPenuh && (
+              <span style={{
+                backgroundColor: '#fee2e2',
+                color: '#991b1b',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                border: '1px solid #fecaca'
+              }}>
+                Kuota Penuh
+              </span>
+            )}
+            {paket && !hasQuota && (
+              <span style={{
+                backgroundColor: '#fef3c7',
+                color: '#92400e',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                border: '1px solid #fde68a'
+              }}>
+                Kuota Belum Diatur
+              </span>
+            )}
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Nama Paket:</span>
@@ -222,19 +277,56 @@ export default function JamaahDashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Tanggal Keberangkatan:</span>
               <span style={{ fontWeight: 600, color: 'var(--primary-700)' }}>
-                {jadwal?.tanggal_keberangkatan || jadwal?.date ? new Date(jadwal.tanggal_keberangkatan || jadwal.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                {departureDateText}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Tanggal Kepulangan:</span>
               <span style={{ fontWeight: 600 }}>
-                {jadwal?.tanggal_kepulangan ? new Date(jadwal.tanggal_kepulangan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                {returnDateText}
               </span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Kapasitas Kuota:</span>
+              <span style={{ color: 'var(--text-muted)' }}>Kuota Total:</span>
               <span style={{ fontWeight: 600 }}>
-                {paket?.quota ? `${paket.quota} Jamaah` : '-'}
+                {hasQuota ? (
+                  `${quotaTotal} jamaah`
+                ) : (
+                  <span style={{ color: '#d97706', fontWeight: 600 }}>Kuota belum ditentukan</span>
+                )}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Jamaah Terdaftar:</span>
+              <span style={{ fontWeight: 600 }}>
+                {paket ? `${registeredCount} jamaah` : '-'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Sisa Kuota:</span>
+              <span style={{ fontWeight: 600 }}>
+                {!hasQuota ? (
+                  <span style={{ color: 'var(--text-muted)' }}>Belum ditentukan</span>
+                ) : isPenuh ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <strong style={{ color: '#dc2626' }}>0 jamaah</strong>
+                    <span style={{
+                      backgroundColor: '#fee2e2',
+                      color: '#991b1b',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      border: '1px solid #fecaca'
+                    }}>
+                      Kuota penuh
+                    </span>
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--primary-700)', fontWeight: 700 }}>
+                    {remainingQuota} jamaah
+                  </span>
+                )}
               </span>
             </div>
           </div>
