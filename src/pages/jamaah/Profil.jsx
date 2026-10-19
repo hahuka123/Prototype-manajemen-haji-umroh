@@ -78,7 +78,9 @@ export default function JamaahProfil() {
           </div>
           <div>
             <span className="stat-label">Jenis Kelamin</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaah.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'}</div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>
+              {jamaah.jenis_kelamin === 'L' || jamaah.jenis_kelamin === 'Laki-laki' ? 'Laki-laki' : (jamaah.jenis_kelamin === 'P' || jamaah.jenis_kelamin === 'Perempuan' ? 'Perempuan' : (jamaah.jenis_kelamin || '-'))}
+            </div>
           </div>
           <div>
             <span className="stat-label">Nomor Telepon / WhatsApp</span>

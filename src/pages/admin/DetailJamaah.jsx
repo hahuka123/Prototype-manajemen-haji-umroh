@@ -85,7 +85,7 @@ export default function AdminDetailJamaah() {
                 <tbody>
                     <tr><td width="30%">Nama Lengkap</td><td><strong>{jamaah.nama_lengkap}</strong></td></tr>
                     <tr><td>NIK</td><td>{jamaah.nik}</td></tr>
-                    <tr><td>Jenis Kelamin</td><td>{jamaah.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'}</td></tr>
+                    <tr><td>Jenis Kelamin</td><td>{jamaah.jenis_kelamin === 'L' || jamaah.jenis_kelamin === 'Laki-laki' ? 'Laki-laki' : (jamaah.jenis_kelamin === 'P' || jamaah.jenis_kelamin === 'Perempuan' ? 'Perempuan' : (jamaah.jenis_kelamin || '-'))}</td></tr>
                     <tr><td>No. Telepon</td><td>{jamaah.no_telepon}</td></tr>
                     <tr><td>Alamat</td><td>{jamaah.alamat}</td></tr>
                     <tr><td>Status Keberangkatan</td><td><span className={`status-badge ${getStatusBadgeClass(jamaah.status_keberangkatan)}`}>{jamaah.status_keberangkatan}</span></td></tr>
