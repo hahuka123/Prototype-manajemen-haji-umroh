@@ -231,6 +231,12 @@ export default function JamaahDashboard() {
                 {jadwal?.tanggal_kepulangan ? new Date(jadwal.tanggal_kepulangan).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
               </span>
             </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Kapasitas Kuota:</span>
+              <span style={{ fontWeight: 600 }}>
+                {paket?.quota ? `${paket.quota} Jamaah` : '-'}
+              </span>
+            </div>
           </div>
           <div style={{ marginTop: '18px' }}>
             <Link to="/jamaah/jadwal" className="btn btn-secondary btn-sm" style={{ width: '100%' }}>

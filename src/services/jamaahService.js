@@ -383,6 +383,40 @@ export const jamaahService = {
 
   // Simpan atau update data pendaftaran onboarding jamaah
   saveOnboardingData: async (payload) => {
+    const pkgId = payload.paket_id || payload.package_id || null;
+
+    // Validasi ketersediaan kuota paket perjalanan
+    if (pkgId) {
+      try {
+        const { data: pkg, error: pkgErr } = await supabase
+          .from('packages')
+          .select('id, name, quota')
+          .eq('id', pkgId)
+          .maybeSingle();
+
+        if (!pkgErr && pkg && pkg.quota) {
+          let countQuery = supabase
+            .from('jamaah')
+            .select('id', { count: 'exact', head: true })
+            .eq('package_id', pkgId);
+
+          if (payload.profile_id) {
+            countQuery = countQuery.neq('profile_id', payload.profile_id);
+          }
+
+          const { count, error: countErr } = await countQuery;
+          if (!countErr && typeof count === 'number' && count >= pkg.quota) {
+            throw new Error(`Pendaftaran tidak dapat dilanjutkan: Kuota untuk paket "${pkg.name}" sudah penuh (${count}/${pkg.quota} jamaah terisi). Silakan pilih paket perjalanan lain.`);
+          }
+        }
+      } catch (quotaErr) {
+        if (quotaErr.message && quotaErr.message.includes('Kuota untuk paket')) {
+          throw quotaErr;
+        }
+        console.warn('[jamaahService] Gagal memeriksa kuota paket saat pendaftaran:', quotaErr);
+      }
+    }
+
     const { data: existing, error: checkError } = await supabase
       .from('jamaah')
       .select('id')
@@ -400,7 +434,7 @@ export const jamaahService = {
       gender: payload.jenis_kelamin || payload.gender,
       phone: payload.no_telepon || payload.phone,
       address: payload.alamat || payload.address,
-      package_id: payload.paket_id || payload.package_id || null,
+      package_id: pkgId,
       birth_date: payload.tanggal_lahir || payload.birth_date,
     };
 

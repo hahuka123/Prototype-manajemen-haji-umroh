@@ -109,6 +109,7 @@ CREATE TABLE public.packages (
     departure_date DATE NOT NULL,
     return_date DATE NOT NULL,
     duration INT NOT NULL CHECK (duration > 0), -- dalam jumlah hari
+    quota INT CHECK (quota IS NULL OR quota > 0), -- kuota maksimal jamaah (minimal 1)
     description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

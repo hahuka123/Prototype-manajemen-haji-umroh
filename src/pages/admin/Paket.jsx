@@ -10,7 +10,8 @@ import {
   Edit3, 
   CalendarDays, 
   AlertCircle,
-  Tag
+  Tag,
+  Users
 } from 'lucide-react';
 
 export default function AdminPaket() {
@@ -32,6 +33,7 @@ export default function AdminPaket() {
     departure_date: '',
     return_date: '',
     duration: '',
+    quota: '',
     description: ''
   });
   const [errorMsg, setErrorMsg] = useState('');
@@ -90,6 +92,7 @@ export default function AdminPaket() {
       departure_date: '',
       return_date: '',
       duration: '',
+      quota: '',
       description: ''
     });
     setErrorMsg('');
@@ -105,6 +108,7 @@ export default function AdminPaket() {
       departure_date: pkg.departure_date || pkg.tanggal_keberangkatan || '',
       return_date: pkg.return_date || pkg.tanggal_kepulangan || '',
       duration: String(pkg.duration ?? pkg.durasi_hari ?? ''),
+      quota: (pkg.quota !== null && pkg.quota !== undefined) ? String(pkg.quota) : '',
       description: pkg.description || pkg.deskripsi || ''
     });
     setErrorMsg('');
@@ -143,6 +147,38 @@ export default function AdminPaket() {
       return;
     }
 
+    // Validasi ketat kuota jamaah
+    const quotaRaw = formData.quota;
+    if (quotaRaw === '' || quotaRaw === null || quotaRaw === undefined) {
+      setErrorMsg('Kuota jamaah wajib diisi.');
+      return;
+    }
+
+    const quotaNum = Number(quotaRaw);
+    if (isNaN(quotaNum)) {
+      setErrorMsg('Kuota jamaah harus berupa angka.');
+      return;
+    }
+
+    if (!Number.isInteger(quotaNum)) {
+      setErrorMsg('Kuota jamaah harus berupa bilangan bulat (bukan pecahan atau desimal).');
+      return;
+    }
+
+    if (quotaNum <= 0) {
+      setErrorMsg('Kuota jamaah harus berupa bilangan bulat positif minimal 1 (tidak boleh 0 atau bernilai negatif).');
+      return;
+    }
+
+    // Jika mengedit, pastikan kuota baru tidak lebih kecil dari jamaah yang sudah terdaftar
+    if (editingId) {
+      const currentPkg = packages.find(p => p.id === editingId);
+      if (currentPkg && typeof currentPkg.terisi === 'number' && quotaNum < currentPkg.terisi) {
+        setErrorMsg(`Kuota baru (${quotaNum}) tidak boleh lebih kecil dari jumlah jamaah yang sudah terdaftar saat ini (${currentPkg.terisi} jamaah).`);
+        return;
+      }
+    }
+
     const payload = {
       name: trimmedName,
       type: formData.type,
@@ -150,6 +186,7 @@ export default function AdminPaket() {
       departure_date: formData.departure_date,
       return_date: formData.return_date,
       duration: durNum,
+      quota: quotaNum,
       description: formData.description.trim()
     };
 
@@ -193,7 +230,7 @@ export default function AdminPaket() {
       <div className="page-header">
         <div className="page-header-title">
           <h1>Manajemen Paket Perjalanan</h1>
-          <p>Kelola katalog paket haji dan umroh, patokan nominal tagihan jamaah, dan durasi pelaksanaan.</p>
+          <p>Kelola katalog paket haji dan umroh, patokan nominal tagihan jamaah, kuota kapasitas, dan durasi pelaksanaan.</p>
         </div>
         <div>
           <button className="btn btn-primary" onClick={openCreateModal}>
@@ -248,7 +285,7 @@ export default function AdminPaket() {
           <Tag size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
           <h3>Belum Ada Paket Perjalanan</h3>
           <p style={{ color: 'var(--text-muted)', marginBottom: '16px', fontSize: '0.9rem' }}>
-            Tambahkan paket haji atau umroh pertama Anda sekarang.
+            Tambahkan paket haji atau umroh pertama Anda sekarang lengkap dengan penetapan kuota jamaah.
           </p>
           <button className="btn btn-primary" onClick={openCreateModal}>
             <PackagePlus size={16} /> Buat Paket Baru
@@ -258,8 +295,20 @@ export default function AdminPaket() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '22px' }}>
           {packages.map((pkg) => (
             <div key={pkg.id} className="card" style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                <span className="status-badge lengkap">{pkg.type}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span className="status-badge lengkap">{pkg.type}</span>
+                  {pkg.is_penuh && (
+                    <span className="status-badge" style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
+                      Kuota Penuh
+                    </span>
+                  )}
+                  {pkg.quota === null && (
+                    <span className="status-badge" style={{ backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
+                      Kuota Belum Diatur
+                    </span>
+                  )}
+                </div>
                 <span style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary-800)', letterSpacing: '-0.02em' }}>
                   Rp {Number(pkg.price).toLocaleString('id-ID')}
                 </span>
@@ -288,6 +337,41 @@ export default function AdminPaket() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Clock size={15} color="var(--primary-700)" />
                   <span>Durasi: <strong>{pkg.duration} Hari</strong> (Pulang: {new Date(pkg.return_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })})</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Users size={15} color="var(--primary-700)" />
+                  <span>
+                    Kuota Jamaah:{' '}
+                    {pkg.quota !== null && pkg.quota !== undefined ? (
+                      <strong>{pkg.quota} orang</strong>
+                    ) : (
+                      <span style={{ color: '#d97706', fontWeight: 600 }}>Belum diatur</span>
+                    )}
+                  </span>
+                </div>
+
+                <div style={{
+                  marginTop: '4px',
+                  paddingTop: '8px',
+                  borderTop: '1px dashed var(--border-color)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '0.82rem'
+                }}>
+                  <span>Terisi: <strong>{pkg.terisi ?? 0} jamaah</strong></span>
+                  <span>
+                    {pkg.quota !== null && pkg.quota !== undefined ? (
+                      <>
+                        Sisa Kuota:{' '}
+                        <strong style={{ color: pkg.sisa_kuota === 0 ? '#dc2626' : 'var(--primary-700)' }}>
+                          {pkg.sisa_kuota} kursi
+                        </strong>
+                      </>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>Sisa: Belum ditentukan</span>
+                    )}
+                  </span>
                 </div>
               </div>
 
@@ -359,8 +443,11 @@ export default function AdminPaket() {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">Nama Paket</label>
+            <label className="form-label" htmlFor="packageName">
+              Nama Paket <span style={{ color: '#ef4444' }}>*</span>
+            </label>
             <input
+              id="packageName"
               type="text"
               required
               className="form-input"
@@ -370,10 +457,13 @@ export default function AdminPaket() {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
             <div className="form-group">
-              <label className="form-label">Jenis Paket</label>
+              <label className="form-label" htmlFor="packageType">
+                Jenis Paket <span style={{ color: '#ef4444' }}>*</span>
+              </label>
               <select
+                id="packageType"
                 className="form-select"
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value })}
@@ -386,8 +476,11 @@ export default function AdminPaket() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Harga Paket (Rp)</label>
+              <label className="form-label" htmlFor="packagePrice">
+                Harga Paket (Rp) <span style={{ color: '#ef4444' }}>*</span>
+              </label>
               <input
+                id="packagePrice"
                 type="number"
                 required
                 className="form-input"
@@ -399,10 +492,13 @@ export default function AdminPaket() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
             <div className="form-group">
-              <label className="form-label">Tanggal Keberangkatan</label>
+              <label className="form-label" htmlFor="departureDate">
+                Tanggal Keberangkatan <span style={{ color: '#ef4444' }}>*</span>
+              </label>
               <input
+                id="departureDate"
                 type="date"
                 required
                 className="form-input"
@@ -412,8 +508,11 @@ export default function AdminPaket() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Tanggal Kepulangan</label>
+              <label className="form-label" htmlFor="returnDate">
+                Tanggal Kepulangan <span style={{ color: '#ef4444' }}>*</span>
+              </label>
               <input
+                id="returnDate"
                 type="date"
                 required
                 className="form-input"
@@ -423,21 +522,47 @@ export default function AdminPaket() {
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Durasi Hari (Kalkulasi Otomatis)</label>
-            <input
-              type="number"
-              required
-              className="form-input"
-              value={formData.duration}
-              onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
-              min="1"
-            />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="packageDuration">
+                Durasi Hari (Kalkulasi Otomatis) <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <input
+                id="packageDuration"
+                type="number"
+                required
+                className="form-input"
+                value={formData.duration}
+                onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
+                min="1"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="packageQuota">
+                Kuota Jamaah (Orang) <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <input
+                id="packageQuota"
+                type="number"
+                required
+                className="form-input"
+                placeholder="Contoh: 40"
+                value={formData.quota}
+                onChange={(e) => setFormData({ ...formData, quota: e.target.value })}
+                min="1"
+                step="1"
+              />
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                Kapasitas maksimal jamaah untuk paket perjalanan (minimal 1).
+              </span>
+            </div>
           </div>
 
           <div className="form-group">
-            <label className="form-label">Deskripsi & Fasilitas Utama</label>
+            <label className="form-label" htmlFor="packageDescription">Deskripsi & Fasilitas Utama</label>
             <textarea
+              id="packageDescription"
               className="form-textarea"
               rows={3}
               placeholder="Contoh: Hotel bintang 4, direct flight Saudia Airlines, muthawwif bersertifikat..."

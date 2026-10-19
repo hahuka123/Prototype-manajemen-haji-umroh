@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../services/supabase';
 import { jamaahService } from '../../services/jamaahService';
+import { packageService } from '../../services/packageService';
 import { 
   UserCheck, 
   CreditCard, 
@@ -14,7 +15,8 @@ import {
   CheckCircle2, 
   ArrowRight,
   PlaneTakeoff,
-  Package
+  Package,
+  Users
 } from 'lucide-react';
 
 export default function JamaahLengkapiData() {
@@ -39,17 +41,9 @@ export default function JamaahLengkapiData() {
     async function fetchPackages() {
       try {
         setLoading(true);
-        // Mengambil data paket asli (UUID) dari tabel packages Supabase
-        const { data, error } = await supabase
-          .from('packages')
-          .select('id, name, price, type, departure_date, duration')
-          .order('departure_date', { ascending: true });
-
-        if (error) {
-          console.error('Gagal memuat paket dari Supabase:', error.message);
-        } else if (data) {
-          setPackagesList(data);
-        }
+        // Mengambil data paket lengkap beserta kuota & ketersediaan dari packageService
+        const data = await packageService.getAll();
+        setPackagesList(data || []);
 
         // Ambil data jamaah jika sudah ada sebagian di DB
         if (profile?.id || user?.id) {
@@ -330,8 +324,10 @@ export default function JamaahLengkapiData() {
               >
                 <option value="">-- Pilih Paket Ibadah --</option>
                 {packagesList.map((pkg) => (
-                  <option key={pkg.id} value={pkg.id}>
+                  <option key={pkg.id} value={pkg.id} disabled={pkg.is_penuh}>
                     {pkg.name || pkg.nama} - Rp {Number(pkg.price || pkg.harga || 0).toLocaleString('id-ID')}
+                    {pkg.quota ? ` (Sisa Kuota: ${pkg.sisa_kuota} kursi)` : ''}
+                    {pkg.is_penuh ? ' [KUOTA PENUH]' : ''}
                   </option>
                 ))}
               </select>
@@ -352,26 +348,41 @@ export default function JamaahLengkapiData() {
                   const pkgPrice = pkg.price || pkg.harga;
                   const pkgDuration = pkg.duration || pkg.durasi_hari;
                   const pkgDepDate = pkg.departure_date || pkg.tanggal_keberangkatan;
+                  const isPenuh = pkg.is_penuh;
 
                   return (
                     <div
                       key={pkg.id}
-                      onClick={() => setPackageId(pkg.id)}
+                      onClick={() => {
+                        if (isPenuh) {
+                          alert(`Paket "${pkgName}" saat ini sudah penuh (${pkg.terisi}/${pkg.quota} jamaah). Silakan pilih paket perjalanan lainnya.`);
+                          return;
+                        }
+                        setPackageId(pkg.id);
+                      }}
                       style={{
                         border: isSelected ? '2px solid var(--primary-600)' : '1px solid var(--border-color)',
-                        background: isSelected ? 'var(--primary-50)' : '#fff',
+                        background: isPenuh ? '#f9fafb' : (isSelected ? 'var(--primary-50)' : '#fff'),
+                        opacity: isPenuh ? 0.75 : 1,
                         borderRadius: 'var(--radius-lg)',
                         padding: '18px',
-                        cursor: 'pointer',
+                        cursor: isPenuh ? 'not-allowed' : 'pointer',
                         transition: 'all 0.2s ease',
                         position: 'relative'
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <span className="status-badge" style={{ backgroundColor: 'var(--primary-100)', color: 'var(--primary-800)', fontWeight: 600 }}>
-                          {pkg.type || pkg.tipe || 'Paket Ibadah'}
-                        </span>
-                        {isSelected && (
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span className="status-badge" style={{ backgroundColor: 'var(--primary-100)', color: 'var(--primary-800)', fontWeight: 600 }}>
+                            {pkg.type || pkg.tipe || 'Paket Ibadah'}
+                          </span>
+                          {isPenuh && (
+                            <span className="status-badge" style={{ backgroundColor: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>
+                              Penuh
+                            </span>
+                          )}
+                        </div>
+                        {isSelected && !isPenuh && (
                           <CheckCircle2 size={22} color="var(--primary-600)" />
                         )}
                       </div>
@@ -384,6 +395,14 @@ export default function JamaahLengkapiData() {
                       <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <span>📅 Berangkat: {pkgDepDate ? new Date(pkgDepDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</span>
                         <span>⏱️ Durasi: {pkgDuration || '-'} Hari</span>
+                        <span>
+                          👥 Kuota:{' '}
+                          {pkg.quota ? (
+                            <strong>{pkg.quota} jamaah (Sisa: {pkg.sisa_kuota} kursi)</strong>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>Belum diatur</span>
+                          )}
+                        </span>
                       </div>
                     </div>
                   );
