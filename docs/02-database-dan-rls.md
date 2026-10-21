@@ -51,6 +51,8 @@ CREATE TYPE user_role AS ENUM ('admin', 'jamaah');
 CREATE TYPE jamaah_status AS ENUM (
     'Pendaftaran',
     'Dokumen Diproses',
+    'Perlu Perbaikan',
+    'Dokumen Terverifikasi',
     'Belum Lunas',
     'Siap Berangkat',
     'Sudah Berangkat',
@@ -247,7 +249,9 @@ WITH payment_summary AS (
 document_summary AS (
     SELECT
         jamaah_id,
-        COUNT(*) FILTER (WHERE status = 'Lengkap') AS dokumen_lengkap
+        COUNT(*) FILTER (WHERE status = 'Lengkap') AS dokumen_lengkap,
+        COUNT(*) FILTER (WHERE status = 'Menunggu Verifikasi') AS dokumen_menunggu,
+        COUNT(*) FILTER (WHERE status = 'Ditolak') AS dokumen_ditolak
     FROM public.documents
     GROUP BY jamaah_id
 )
@@ -271,7 +275,17 @@ SELECT
     LEAST(
         100,
         ROUND(COALESCE(ds.dokumen_lengkap, 0)::numeric / 6.0 * 100)
-    ) AS persentase_dokumen
+    ) AS persentase_dokumen,
+    COALESCE(ds.dokumen_lengkap, 0) AS dokumen_lengkap,
+    COALESCE(ds.dokumen_menunggu, 0) AS dokumen_menunggu,
+    COALESCE(ds.dokumen_ditolak, 0) AS dokumen_ditolak,
+    j.status AS status_jamaah,
+    CASE 
+        WHEN COALESCE(ds.dokumen_ditolak, 0) > 0 THEN 'Perlu Perbaikan'
+        WHEN COALESCE(ds.dokumen_lengkap, 0) >= 6 THEN 'Dokumen Terverifikasi'
+        WHEN COALESCE(ds.dokumen_menunggu, 0) > 0 OR COALESCE(ds.dokumen_lengkap, 0) > 0 THEN 'Dokumen Diproses'
+        ELSE 'Pendaftaran'
+    END AS status_dokumen
 FROM public.jamaah j
 LEFT JOIN public.profiles p ON j.profile_id = p.id
 LEFT JOIN public.packages pkg ON j.package_id = pkg.id

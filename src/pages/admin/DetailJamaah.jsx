@@ -51,11 +51,13 @@ export default function AdminDetailJamaah() {
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case 'Lengkap': return 'verified';
+      case 'Dokumen Terverifikasi': return 'verified';
       case 'Lunas': return 'verified';
       case 'Siap Berangkat': return 'verified';
       case 'Menunggu Verifikasi': return 'pending';
       case 'Belum Lunas': return 'pending';
       case 'Dokumen Diproses': return 'pending';
+      case 'Perlu Perbaikan': return 'rejected';
       case 'Ditolak': return 'rejected';
       default: return '';
     }

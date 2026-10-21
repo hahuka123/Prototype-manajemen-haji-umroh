@@ -1,12 +1,17 @@
-import { supabase } from './supabase';
+import { supabase } from './supabase.js';
+import { documentService } from './documentService.js';
 
-function mapJamaah(j) {
+export function mapJamaah(j, docs = null) {
   if (!j) return null;
   
   let docPercent = 0;
   let dokLengkap = 0;
 
-  if (j.dokumen_lengkap !== undefined && j.dokumen_lengkap !== null) {
+  if (Array.isArray(docs) && docs.length > 0) {
+    const progress = documentService.calculateProgress(docs);
+    dokLengkap = progress.lengkap;
+    docPercent = progress.persentase;
+  } else if (j.dokumen_lengkap !== undefined && j.dokumen_lengkap !== null) {
     dokLengkap = Number(j.dokumen_lengkap);
     docPercent = Math.min(100, Math.round((dokLengkap / 6) * 100));
   } else if (j.persentase_dokumen !== undefined && j.persentase_dokumen !== null) {
@@ -21,14 +26,31 @@ function mapJamaah(j) {
   const total = Number(j.total_terbayar || 0);
   const pending = Number(j.pending_verifikasi || 0);
   
-  // Status keberangkatan / siklus jamaah
-  const statusKeberangkatan = j.status || (
-    docPercent === 100 && sisa === 0
-      ? 'Siap Berangkat'
-      : docPercent > 0
-      ? 'Dokumen Diproses'
-      : 'Pendaftaran'
-  );
+  // Hitung status verifikasi dokumen berdasarkan data aktual berkas yang tersimpan
+  let calculatedDocStatus = 'Pendaftaran';
+
+  if (Array.isArray(docs) && docs.length > 0) {
+    calculatedDocStatus = documentService.determineVerificationStatus(docs);
+  } else if (j.status_dokumen) {
+    calculatedDocStatus = j.status_dokumen;
+  } else if (Number(j.dokumen_ditolak || 0) > 0) {
+    calculatedDocStatus = 'Perlu Perbaikan';
+  } else if (Number(j.dokumen_menunggu || 0) > 0) {
+    calculatedDocStatus = 'Dokumen Diproses';
+  } else if (dokLengkap >= 6 || docPercent === 100) {
+    calculatedDocStatus = 'Dokumen Terverifikasi';
+  } else if (dokLengkap > 0 || docPercent > 0) {
+    calculatedDocStatus = 'Dokumen Diproses';
+  } else {
+    calculatedDocStatus = 'Pendaftaran';
+  }
+
+  // Jika status siklus keberangkatan lanjut sudah aktif di database (e.g. 'Sudah Berangkat' atau 'Selesai'), pertahankan
+  const isPostDeparture = (j.status === 'Sudah Berangkat' || j.status === 'Selesai' || j.status_keberangkatan === 'Sudah Berangkat' || j.status_keberangkatan === 'Selesai');
+  const preservedStatus = isPostDeparture ? (j.status || j.status_keberangkatan) : null;
+
+  // Status jamaah prioritas: status pasca-berangkat jika ada, jika tidak gunakan status verifikasi dokumen riil
+  const finalStatus = preservedStatus || calculatedDocStatus;
 
   const statusBayar = j.status_pembayaran || (
     sisa === 0 && total > 0
@@ -51,8 +73,8 @@ function mapJamaah(j) {
     package_id: j.package_id,
     package_name: j.package_name || '-',
     package_price: Number(j.package_price || 0),
-    status: j.status || statusKeberangkatan,
-    status_keberangkatan: statusKeberangkatan,
+    status: finalStatus,
+    status_keberangkatan: finalStatus,
     status_pembayaran: statusBayar,
     status_pelunasan: statusBayar,
     total_terbayar: total,
@@ -101,15 +123,28 @@ export const jamaahService = {
   // Mengambil seluruh data jamaah untuk Admin
   getJamaah: async () => {
     try {
-      const { data, error } = await supabase
-        .from('v_jamaah_billing_summary')
-        .select('*');
-      if (error) {
-        console.error('[jamaahService] getJamaah error:', error.message);
-        throw error;
+      const [summaryRes, docsRes] = await Promise.all([
+        supabase
+          .from('v_jamaah_billing_summary')
+          .select('*'),
+        supabase
+          .from('documents')
+          .select('id, jamaah_id, document_type, status')
+      ]);
+
+      if (summaryRes.error) {
+        console.error('[jamaahService] getJamaah error:', summaryRes.error.message);
+        throw summaryRes.error;
       }
       
-      return (data || []).map(mapJamaah);
+      const allDocs = (!docsRes.error && Array.isArray(docsRes.data)) ? docsRes.data : [];
+      const docsByJamaah = {};
+      allDocs.forEach(d => {
+        if (!docsByJamaah[d.jamaah_id]) docsByJamaah[d.jamaah_id] = [];
+        docsByJamaah[d.jamaah_id].push(d);
+      });
+
+      return (summaryRes.data || []).map(j => mapJamaah(j, docsByJamaah[j.jamaah_id]));
     } catch (e) {
       console.error('[jamaahService] Gagal memuat data jamaah:', e);
       throw e;
@@ -148,28 +183,22 @@ export const jamaahService = {
 
       const summary = summaryRes.data || {};
       const detail = detailRes.data || {};
-      const base = mapJamaah(summary);
-      const jamaahId = detail.id || base.id;
+      const jamaahId = detail.id || summary.jamaah_id;
 
-      let dokLengkap = base.dokumen_lengkap;
-      let docPercent = base.dokumen_persentase;
-
-      if (jamaahId && (!dokLengkap || docPercent === 0)) {
+      let docs = [];
+      if (jamaahId) {
         try {
-          const { count, error: countErr } = await supabase
+          const { data: userDocs } = await supabase
             .from('documents')
-            .select('id', { count: 'exact', head: true })
-            .eq('jamaah_id', jamaahId)
-            .eq('status', 'Lengkap');
-            
-          if (!countErr && typeof count === 'number' && count > 0) {
-            dokLengkap = count;
-            docPercent = Math.min(100, Math.round((count / 6) * 100));
-          }
+            .select('id, jamaah_id, document_type, status')
+            .eq('jamaah_id', jamaahId);
+          if (Array.isArray(userDocs)) docs = userDocs;
         } catch (e) {
           // ignore
         }
       }
+
+      const base = mapJamaah(summary, docs);
 
       return {
         ...base,
@@ -185,9 +214,6 @@ export const jamaahService = {
         tanggal_lahir: detail.birth_date || '',
         paket_id: detail.package_id || base.paket_id,
         package_id: detail.package_id || base.package_id,
-        dokumen_lengkap: dokLengkap,
-        dokumen_persentase: docPercent,
-        persentase_dokumen: docPercent,
       };
     } catch (err) {
       console.error('[jamaahService] Exception getMyJamaah:', err);
@@ -202,7 +228,7 @@ export const jamaahService = {
     }
 
     try {
-      const [summaryRes, detailRes] = await Promise.all([
+      const [summaryRes, detailRes, docsRes] = await Promise.all([
         supabase
           .from('v_jamaah_billing_summary')
           .select('*')
@@ -212,7 +238,11 @@ export const jamaahService = {
           .from('jamaah')
           .select('*, profiles(full_name, phone)')
           .eq('id', id)
-          .maybeSingle()
+          .maybeSingle(),
+        supabase
+          .from('documents')
+          .select('id, jamaah_id, document_type, status')
+          .eq('jamaah_id', id)
       ]);
 
       if (summaryRes.error && detailRes.error) {
@@ -221,28 +251,9 @@ export const jamaahService = {
 
       const summary = summaryRes.data || {};
       const detail = detailRes.data || {};
-      const base = mapJamaah(summary);
+      const docs = (!docsRes.error && Array.isArray(docsRes.data)) ? docsRes.data : [];
+      const base = mapJamaah(summary, docs);
       const jamaahId = detail.id || summary.jamaah_id || id;
-
-      let dokLengkap = base.dokumen_lengkap;
-      let docPercent = base.dokumen_persentase;
-
-      if (jamaahId && (!dokLengkap || docPercent === 0)) {
-        try {
-          const { count, error: countErr } = await supabase
-            .from('documents')
-            .select('id', { count: 'exact', head: true })
-            .eq('jamaah_id', jamaahId)
-            .eq('status', 'Lengkap');
-            
-          if (!countErr && typeof count === 'number' && count > 0) {
-            dokLengkap = count;
-            docPercent = Math.min(100, Math.round((count / 6) * 100));
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
 
       const fullName = summary.full_name || detail.profiles?.full_name || 'Jamaah';
       const phone = summary.phone || detail.phone || detail.profiles?.phone || '-';
@@ -267,11 +278,11 @@ export const jamaahService = {
         alamat: detail.address || '',
         package_id: detail.package_id || summary.package_id,
         paket_id: detail.package_id || summary.package_id,
-        status: detail.status || summary.status || base.status,
-        status_keberangkatan: detail.status || summary.status || base.status_keberangkatan,
-        dokumen_lengkap: dokLengkap,
-        dokumen_persentase: docPercent,
-        persentase_dokumen: docPercent,
+        status: base.status,
+        status_keberangkatan: base.status_keberangkatan,
+        dokumen_lengkap: base.dokumen_lengkap,
+        dokumen_persentase: base.dokumen_persentase,
+        persentase_dokumen: base.persentase_dokumen,
       };
     } catch (err) {
       console.error('[jamaahService] getJamaahById error:', err);

@@ -1,6 +1,6 @@
-import { supabase } from './supabase';
+import { supabase } from './supabase.js';
 
-const REQUIRED_DOCUMENTS = ['ktp', 'kk', 'passport', 'foto', 'buku-nikah', 'kesehatan'];
+export const REQUIRED_DOCUMENTS = ['ktp', 'kk', 'passport', 'foto', 'buku-nikah', 'kesehatan'];
 const DOCUMENTS_BUCKET = 'documents';
 
 const DEMO_DOCUMENTS = [
@@ -13,6 +13,74 @@ const DEMO_DOCUMENTS = [
 ];
 
 export const documentService = {
+  // Menentukan status verifikasi dokumen jamaah berdasarkan status berkas yang tersimpan dan dapat dibuktikan
+  determineVerificationStatus: (documents = []) => {
+    const docs = documents || [];
+    const totalWajib = REQUIRED_DOCUMENTS.length; // 6
+    
+    // 1. Jika ada dokumen yang ditolak, status jamaah = 'Perlu Perbaikan'
+    const hasRejected = docs.some(d => d.status === 'Ditolak');
+    if (hasRejected) {
+      return 'Perlu Perbaikan';
+    }
+    
+    // 2. Jika ada dokumen yang masih menunggu verifikasi admin, status = 'Dokumen Diproses'
+    const hasPending = docs.some(d => d.status === 'Menunggu Verifikasi');
+    if (hasPending) {
+      return 'Dokumen Diproses';
+    }
+    
+    // 3. Hitung dokumen wajib yang sudah benar-benar berstatus 'Lengkap' (disetujui admin)
+    const approvedTypes = new Set(
+      docs
+        .filter(d => d.status === 'Lengkap' && REQUIRED_DOCUMENTS.includes(d.tipe || d.document_type))
+        .map(d => d.tipe || d.document_type)
+    );
+    
+    // Jika seluruh 6 dokumen wajib sudah berstatus 'Lengkap'
+    if (approvedTypes.size >= totalWajib) {
+      return 'Dokumen Terverifikasi';
+    }
+    
+    // Jika ada sebagian berkas yang sudah lengkap namun belum semuanya (dan belum ada yang ditolak/menunggu)
+    if (approvedTypes.size > 0) {
+      return 'Dokumen Diproses';
+    }
+    
+    // Belum ada dokumen yang diunggah
+    return 'Pendaftaran';
+  },
+
+  // Sinkronisasi status dokumen ke tabel jamaah di Supabase (best-effort / non-blocking)
+  syncJamaahDocumentStatus: async (jamaahId) => {
+    if (!jamaahId || typeof jamaahId !== 'string' || jamaahId.startsWith('demo-')) {
+      return null;
+    }
+    try {
+      const { data: allDocs, error: docErr } = await supabase
+        .from('documents')
+        .select('document_type, status')
+        .eq('jamaah_id', jamaahId);
+        
+      if (docErr) throw docErr;
+      
+      const newStatus = documentService.determineVerificationStatus(allDocs || []);
+      
+      const { error: updateErr } = await supabase
+        .from('jamaah')
+        .update({ status: newStatus })
+        .eq('id', jamaahId);
+        
+      if (updateErr) {
+        console.warn('[documentService] Sinkronisasi jamaah.status ke DB ditunda (memerlukan migrasi enum):', updateErr.message);
+      }
+      return newStatus;
+    } catch (e) {
+      console.warn('[documentService] syncJamaahDocumentStatus error:', e?.message || e);
+      return null;
+    }
+  },
+
   // Generate signed URL for private document access (300 seconds)
   getDocumentUrl: async (pathOrUrl) => {
     if (!pathOrUrl) return null;
@@ -155,6 +223,9 @@ export const documentService = {
     const newDoc = dbResponse.data;
     const signedUrl = await documentService.getDocumentUrl(filePath);
     
+    // Sinkronisasi status ke tabel jamaah secara asinkron
+    await documentService.syncJamaahDocumentStatus(jamaahId);
+
     return {
       id: newDoc.id,
       jamaah_id: newDoc.jamaah_id,
@@ -200,6 +271,9 @@ export const documentService = {
       signedUrl = await documentService.getDocumentUrl(data.file_path);
     }
     
+    // Sinkronisasi status ke tabel jamaah secara asinkron
+    await documentService.syncJamaahDocumentStatus(jamaahId);
+
     return {
       id: data.id,
       jamaah_id: data.jamaah_id,
@@ -257,7 +331,7 @@ export const documentService = {
   // Hitung progres kelengkapan dokumen (rumus: jumlah dokumen lengkap / 6 * 100)
   calculateProgress: (documents = []) => {
     const totalWajib = REQUIRED_DOCUMENTS.length; // 6
-    const lengkap = (documents || []).filter(d => d.status === 'Lengkap').length;
+    const lengkap = (documents || []).filter(d => d.status === 'Lengkap' && REQUIRED_DOCUMENTS.includes(d.tipe || d.document_type)).length;
     const persentase = totalWajib > 0 ? Math.min(100, Math.round((lengkap / totalWajib) * 100)) : 0;
     const statusLabel = persentase === 100 ? 'Lengkap' : persentase >= 70 ? 'Hampir Lengkap' : 'Belum Lengkap';
     return {

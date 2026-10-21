@@ -88,7 +88,17 @@ export default function JamaahProfil() {
           </div>
           <div>
             <span className="stat-label">Status Keberangkatan</span>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '2px' }}>{jamaah.status_keberangkatan}</div>
+            <div style={{ marginTop: '4px' }}>
+              <span className={`status-badge ${
+                jamaah.status_keberangkatan === 'Dokumen Terverifikasi' || jamaah.status_keberangkatan === 'Siap Berangkat' || jamaah.status_keberangkatan === 'Sudah Berangkat' || jamaah.status_keberangkatan === 'Selesai'
+                  ? 'verified'
+                  : jamaah.status_keberangkatan === 'Perlu Perbaikan'
+                  ? 'rejected'
+                  : 'pending'
+              }`}>
+                {jamaah.status_keberangkatan}
+              </span>
+            </div>
           </div>
         </div>
 

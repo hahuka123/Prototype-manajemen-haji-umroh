@@ -43,11 +43,14 @@ export default function AdminJamaah() {
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case 'Siap Berangkat': return 'verified';
+      case 'Dokumen Terverifikasi': return 'verified';
       case 'Lunas': return 'verified';
       case 'Selesai': return 'verified';
       case 'Dokumen Diproses': return 'pending';
       case 'Belum Lunas': return 'pending';
       case 'Pendaftaran': return 'pending';
+      case 'Perlu Perbaikan': return 'rejected';
+      case 'Ditolak': return 'rejected';
       default: return '';
     }
   };
@@ -119,6 +122,8 @@ export default function AdminJamaah() {
             <option value="">Semua Status</option>
             <option value="Pendaftaran">Pendaftaran</option>
             <option value="Dokumen Diproses">Dokumen Diproses</option>
+            <option value="Perlu Perbaikan">Perlu Perbaikan</option>
+            <option value="Dokumen Terverifikasi">Dokumen Terverifikasi</option>
             <option value="Belum Lunas">Belum Lunas</option>
             <option value="Siap Berangkat">Siap Berangkat</option>
             <option value="Sudah Berangkat">Sudah Berangkat</option>
