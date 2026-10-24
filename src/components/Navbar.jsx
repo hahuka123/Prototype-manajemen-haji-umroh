@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { LogOut, User, ShieldCheck } from 'lucide-react';
+import NotificationBell from './NotificationBell';
 
 export default function Navbar() {
   const { profile, role, logout, isConfigured, isDemo } = useAuth();
@@ -30,7 +31,9 @@ export default function Navbar() {
         <p>Biro Penyelenggara Perjalanan Ibadah Terpadu</p>
       </div>
 
-      <div className="navbar-user-menu">
+      <div className="navbar-user-menu" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <NotificationBell />
+
         <div className="user-badge">
           <div className="user-avatar">
             {role === 'admin' ? <ShieldCheck size={18} /> : <User size={18} />}
