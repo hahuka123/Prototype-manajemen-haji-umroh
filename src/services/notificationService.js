@@ -312,5 +312,93 @@ export const notificationService = {
       console.warn('[notificationService] Exception markAllAsRead:', e);
       return 0;
     }
+  },
+
+  /**
+   * Menjalankan pemrosesan pengingat termin secara manual via RPC public.process_installment_reminders().
+   * Khusus Admin / Pengujian tanpa pendaftaran cron otomatis.
+   */
+  triggerManualReminderCheck: async (profileId = null) => {
+    if (profileId && profileId.startsWith('demo-')) {
+      return {
+        success: true,
+        status: 'success',
+        execution_date_wib: getJakartaCurrentDateStr(),
+        terms_evaluated: 3,
+        notifications_created: 0,
+        skipped_paid_terms: 1,
+        skipped_pending_verification: 1,
+        errors_encountered: 0,
+        is_demo: true
+      };
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('process_installment_reminders');
+      if (error) {
+        console.error('[notificationService] Error triggerManualReminderCheck:', error.message);
+        throw error;
+      }
+      return data;
+    } catch (e) {
+      console.warn('[notificationService] Exception triggerManualReminderCheck:', e);
+      throw e;
+    }
   }
 };
+
+/**
+ * Memvalidasi konteks otorisasi pemanggil process_installment_reminders
+ * (Simulasi aturan keamanan berlapis SQL untuk pengujian unit):
+ * - anon: ditolak
+ * - authenticated non-admin: ditolak
+ * - authenticated admin: diizinkan
+ * - service_role: diizinkan
+ * - NULL auth role dengan session postgres: diizinkan (internal pg_cron / superuser)
+ * - kondisi tak terdefinisi / role NULL dari API: ditolak
+ */
+export function verifyReminderAuthorizationContext({ role, isAdmin = false, sessionUser = 'authenticator' }) {
+  if (role === 'anon') {
+    throw new Error('Akses ditolak: Pemanggil anonim tidak diizinkan menjalankan fungsi pengingat.');
+  }
+  if (role === 'authenticated') {
+    if (!isAdmin) {
+      throw new Error('Akses ditolak: Hanya administrator yang dapat memproses pengingat termin cicilan.');
+    }
+    return true;
+  }
+  if (role === 'service_role') {
+    return true;
+  }
+  if ((!role || role === '') && sessionUser === 'postgres') {
+    return true;
+  }
+  throw new Error('Akses ditolak: Konteks otorisasi tidak valid atau tidak memiliki izin.');
+}
+
+/**
+ * Membangun ringkasan hasil pemrosesan termin cicilan
+ * (Simulasi kembalian jsonb_build_object fungsi SQL):
+ * - errors_encountered === 0 => success: true, status: 'success'
+ * - errors_encountered > 0 => success: false, status: 'partial_success'
+ */
+export function buildReminderExecutionSummary({
+  executionDateWib,
+  termsEvaluated = 0,
+  notificationsCreated = 0,
+  skippedPaid = 0,
+  skippedPending = 0,
+  errorsEncountered = 0
+}) {
+  const isSuccess = errorsEncountered === 0;
+  return {
+    success: isSuccess,
+    status: isSuccess ? 'success' : 'partial_success',
+    execution_date_wib: executionDateWib,
+    terms_evaluated: termsEvaluated,
+    notifications_created: notificationsCreated,
+    skipped_paid_terms: skippedPaid,
+    skipped_pending_verification: skippedPending,
+    errors_encountered: errorsEncountered
+  };
+}
