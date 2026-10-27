@@ -83,15 +83,21 @@ WHERE routine_schema = 'public'
 
 ---
 
-## 4. Urutan Penerapan Migrasi di SQL Editor Staging
+## 4. Urutan Penerapan SQL di SQL Editor Staging
 
-Terapkan berkas migrasi satu per satu secara berurutan:
+Terapkan berkas SQL satu per satu secara berurutan:
 
-1. **Langkah 1:** Tempel isi berkas [20261024100000_create_installment_terms_schema.sql](file:///c:/Users/hp/Documents/Prototype%20manajemen%20haji%20&%20umroh/supabase/migrations/20261024100000_create_installment_terms_schema.sql) $\rightarrow$ Klik **Run**.
+1. **Langkah 0 (Fondasi Database Staging Kosong):**
+   - Tempel isi berkas [supabase/staging_foundation.sql](file:///c:/Users/hp/Documents/Prototype%20manajemen%20haji%20&%20umroh/supabase/staging_foundation.sql) $\rightarrow$ Klik **Run**.
+   - *Verifikasi:* Membentuk 6 tabel dasar (`profiles`, `packages`, `jamaah`, `documents`, `payments`, `schedules`), helper `is_admin()`, RPC kuota paket, view `v_jamaah_billing_summary` (security_invoker), RLS policies, dan bucket privat Supabase Storage.
+2. **Langkah 1 (Termin Cicilan):** 
+   - Tempel isi berkas [20261024100000_create_installment_terms_schema.sql](file:///c:/Users/hp/Documents/Prototype%20manajemen%20haji%20&%20umroh/supabase/migrations/20261024100000_create_installment_terms_schema.sql) $\rightarrow$ Klik **Run**.
    - *Verifikasi:* Tabel `installment_terms` dan view `v_installment_terms_summary` terbentuk.
-2. **Langkah 2:** Tempel isi berkas [20261024110000_create_notifications_schema.sql](file:///c:/Users/hp/Documents/Prototype%20manajemen%20haji%20&%20umroh/supabase/migrations/20261024110000_create_notifications_schema.sql) $\rightarrow$ Klik **Run**.
+3. **Langkah 2 (Notifikasi In-App):** 
+   - Tempel isi berkas [20261024110000_create_notifications_schema.sql](file:///c:/Users/hp/Documents/Prototype%20manajemen%20haji%20&%20umroh/supabase/migrations/20261024110000_create_notifications_schema.sql) $\rightarrow$ Klik **Run**.
    - *Verifikasi:* Tabel `notifications`, constraint unik `dedup_key`, RPC `mark_notification_as_read`, dan trigger `trg_payments_notification` terbentuk.
-3. **Langkah 3:** Tempel isi berkas [20261025100000_create_installment_reminder_function.sql](file:///c:/Users/hp/Documents/Prototype%20manajemen%20haji%20&%20umroh/supabase/migrations/20261025100000_create_installment_reminder_function.sql) $\rightarrow$ Klik **Run**.
+4. **Langkah 3 (Fungsi Pengingat Cicilan):** 
+   - Tempel isi berkas [20261025100000_create_installment_reminder_function.sql](file:///c:/Users/hp/Documents/Prototype%20manajemen%20haji%20&%20umroh/supabase/migrations/20261025100000_create_installment_reminder_function.sql) $\rightarrow$ Klik **Run**.
    - *Verifikasi:* Fungsi `public.process_installment_reminders()` terbentuk.
 
 ---
@@ -119,8 +125,8 @@ VALUES
     ('ffffffff-0000-0000-0000-000000000003', 'Staging Jamaah Dua',  '081100000003', 'jamaah')
 ON CONFLICT (id) DO NOTHING;
 
--- 2. Paket Perjalanan Sintetis
-INSERT INTO public.packages (id, name, type, price, departure_date, return_date, duration_days, quota, created_by)
+-- 2. Paket Perjalanan Sintetis (Kolom sesuai skema fondasi)
+INSERT INTO public.packages (id, name, type, price, departure_date, return_date, duration, quota)
 VALUES (
     'ffffffff-0000-0000-0000-000000000010',
     'Paket Uji Coba Umrah Staging',
@@ -129,16 +135,15 @@ VALUES (
     (CURRENT_DATE + 60),
     (CURRENT_DATE + 69),
     10,
-    45,
-    'ffffffff-0000-0000-0000-000000000001'
+    45
 )
 ON CONFLICT (id) DO NOTHING;
 
--- 3. Jamaah Sintetis
-INSERT INTO public.jamaah (id, profile_id, package_id, nik, phone, status, mahram_status)
+-- 3. Jamaah Sintetis (Wajib menyertakan birth_date, gender, address bertipe NOT NULL)
+INSERT INTO public.jamaah (id, profile_id, package_id, nik, phone, birth_date, gender, address, status)
 VALUES 
-    ('ffffffff-0000-0000-0000-000000000020', 'ffffffff-0000-0000-0000-000000000002', 'ffffffff-0000-0000-0000-000000000010', '9999000000000001', '081100000002', 'Pendaftaran', 'Mandiri'),
-    ('ffffffff-0000-0000-0000-000000000030', 'ffffffff-0000-0000-0000-000000000003', 'ffffffff-0000-0000-0000-000000000010', '9999000000000002', '081100000003', 'Pendaftaran', 'Mandiri')
+    ('ffffffff-0000-0000-0000-000000000020', 'ffffffff-0000-0000-0000-000000000002', 'ffffffff-0000-0000-0000-000000000010', '9999000000000001', '081100000002', '1990-01-01', 'Laki-laki', 'Jl. Staging No. 1, Jakarta', 'Pendaftaran'),
+    ('ffffffff-0000-0000-0000-000000000030', 'ffffffff-0000-0000-0000-000000000003', 'ffffffff-0000-0000-0000-000000000010', '9999000000000002', '081100000003', '1992-05-15', 'Perempuan', 'Jl. Staging No. 2, Jakarta', 'Pendaftaran')
 ON CONFLICT (id) DO NOTHING;
 
 -- 4. Jadwal Termin Cicilan Uji Coba untuk Jamaah Satu

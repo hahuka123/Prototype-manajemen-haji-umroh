@@ -86,7 +86,7 @@ CREATE OR REPLACE FUNCTION public.mark_notification_as_read(target_notification_
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     affected_rows INT;
@@ -107,7 +107,7 @@ CREATE OR REPLACE FUNCTION public.mark_all_notifications_as_read()
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     affected_rows INT;
@@ -135,7 +135,7 @@ CREATE OR REPLACE FUNCTION public.trg_handle_payment_notification()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_profile_id UUID;
