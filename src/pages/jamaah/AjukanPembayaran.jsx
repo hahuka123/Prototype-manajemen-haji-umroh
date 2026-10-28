@@ -21,6 +21,7 @@ export default function JamaahAjukanPembayaran() {
   const [proofFile, setProofFile] = useState(null);
   const [proofFileName, setProofFileName] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -76,6 +77,7 @@ export default function JamaahAjukanPembayaran() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (submitting) return; // Mencegah double submit
     const num = Number(amount);
 
     if (paymentType === 'full' && num !== Number(sisaTagihan)) {
@@ -94,6 +96,8 @@ export default function JamaahAjukanPembayaran() {
     }
 
     try {
+      setSubmitting(true);
+      setErrorMsg('');
       await paymentService.submitTransfer({
         jamaah_id: jamaah.id,
         jenis: paymentType,
@@ -110,6 +114,7 @@ export default function JamaahAjukanPembayaran() {
       }, 1800);
     } catch (err) {
       setErrorMsg(err.message);
+      setSubmitting(false);
     }
   }
 
@@ -316,9 +321,10 @@ export default function JamaahAjukanPembayaran() {
                 type="submit"
                 className="btn btn-accent"
                 style={{ flex: 2 }}
+                disabled={submitting}
               >
                 <Send size={18} />
-                <span>Kirim Pengajuan Pembayaran</span>
+                <span>{submitting ? 'Mengirim Pengajuan...' : 'Kirim Pengajuan Pembayaran'}</span>
               </button>
             </div>
           </form>

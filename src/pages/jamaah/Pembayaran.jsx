@@ -6,12 +6,14 @@ import { CreditCard, Send, CheckCircle, Clock } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
+import { installmentService } from '../../services/installmentService';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function JamaahPembayaran() {
   const { profile } = useAuth();
   const [jamaah, setJamaah] = useState(null);
   const [payments, setPayments] = useState([]);
+  const [terms, setTerms] = useState([]);
   const [paket, setPaket] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -40,6 +42,9 @@ export default function JamaahPembayaran() {
             (a, b) => new Date(b.tanggal) - new Date(a.tanggal)
           );
           setPayments(sorted);
+
+          const tData = await installmentService.getTermsByJamaah(jData.id);
+          setTerms(tData || []);
         } else {
           setPayments([]);
         }
@@ -123,6 +128,57 @@ export default function JamaahPembayaran() {
           icon={<Clock size={24} />}
           variant="accent"
         />
+      </div>
+
+      {/* Riwayat Pembayaran */}
+      <div className="card" style={{ marginBottom: '24px' }}>
+        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: '1.1rem' }}>Rencana Jadwal Termin Cicilan</h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Pemantauan progress pelunasan bertahap (Termin) sesuai ketentuan travel.
+            </p>
+          </div>
+        </div>
+
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Termin #</th>
+                <th>Judul / Keterangan</th>
+                <th>Jatuh Tempo</th>
+                <th>Target Nominal</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {terms.length === 0 ? (
+                <tr><td colSpan="5" style={{ textAlign: 'center' }}>Belum ada jadwal termin cicilan.</td></tr>
+              ) : (
+                terms.map((term) => (
+                  <tr key={term.id}>
+                    <td style={{ fontWeight: 700 }}>Termin #{term.term_number}</td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{term.title}</div>
+                      {term.notes && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{term.notes}</div>}
+                    </td>
+                    <td>{term.due_date}</td>
+                    <td style={{ fontWeight: 700 }}>Rp {Number(term.amount || term.target_amount || 0).toLocaleString('id-ID')}</td>
+                    <td>
+                      <span className={`badge ${
+                        term.status === 'paid' ? 'badge-success' :
+                        term.status === 'overdue' ? 'badge-danger' : 'badge-warning'
+                      }`} style={{ textTransform: 'uppercase', fontSize: '0.7rem', padding: '4px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                        {term.status === 'paid' ? 'Lunas' : term.status === 'overdue' ? 'Terlambat' : 'Belum Lunas'}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Riwayat Pembayaran */}
