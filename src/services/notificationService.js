@@ -2,6 +2,25 @@ import { supabase } from './supabase.js';
 import { getJakartaCurrentDateStr } from './installmentService.js';
 
 /**
+ * Daftar seluruh tipe notifikasi resmi yang didukung oleh sistem dan CHECK constraint database.
+ */
+export const ALLOWED_NOTIFICATION_TYPES = [
+  'payment_verified',
+  'payment_rejected',
+  'payment_submitted',
+  'payment_cash',
+  'due_h7',
+  'due_h1',
+  'overdue',
+  'document_submitted',
+  'document_verified',
+  'document_rejected',
+  'admin_new_payment',
+  'admin_new_document',
+  'general'
+];
+
+/**
  * Memetakan record notifikasi mentah dari database menjadi objek siap pakai di UI.
  */
 export function mapNotification(n) {
@@ -130,7 +149,19 @@ export function generateReminderNotificationPayload({
   };
 }
 
-let DEMO_NOTIFICATIONS_STORE = [
+/**
+ * Memancarkan event pembaruan notifikasi agar komponen UI (seperti NotificationBell)
+ * langsung memperbarui badge dan daftar notifikasi secara real-time.
+ */
+export function broadcastNotificationUpdate() {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('notification-updated'));
+  }
+}
+
+const STORAGE_KEY = 'demo_notifications_store_v1';
+
+const DEFAULT_DEMO_NOTIFICATIONS = [
   {
     id: 'demo-notif-1',
     profile_id: 'demo-jamaah-id-456',
@@ -175,6 +206,49 @@ let DEMO_NOTIFICATIONS_STORE = [
   }
 ];
 
+function initDemoNotificationsStore() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+  return [...DEFAULT_DEMO_NOTIFICATIONS];
+}
+
+let DEMO_NOTIFICATIONS_STORE = initDemoNotificationsStore();
+
+function syncDemoStore(newStore) {
+  DEMO_NOTIFICATIONS_STORE = newStore;
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(newStore));
+    } catch (e) {
+      // Ignore
+    }
+  }
+  broadcastNotificationUpdate();
+}
+
+export function resetDemoNotificationsStore() {
+  DEMO_NOTIFICATIONS_STORE = [...DEFAULT_DEMO_NOTIFICATIONS];
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      // Ignore
+    }
+  }
+  broadcastNotificationUpdate();
+}
+
 export const notificationService = {
   /**
    * Mengambil seluruh notifikasi milik profil pengguna aktif.
@@ -188,7 +262,7 @@ export const notificationService = {
       (typeof profileId === 'string' && profileId.startsWith('demo-'))
     ) {
       return DEMO_NOTIFICATIONS_STORE.filter(
-        n => n.profile_id === profileId || profileId === 'demo-jamaah-id-456'
+        n => n.profile_id === profileId
       ).map(mapNotification);
     }
 
@@ -207,7 +281,7 @@ export const notificationService = {
       return (data || []).map(mapNotification);
     } catch (e) {
       if (typeof profileId === 'string' && profileId.startsWith('demo-')) {
-        return DEMO_NOTIFICATIONS_STORE.map(mapNotification);
+        return DEMO_NOTIFICATIONS_STORE.filter(n => n.profile_id === profileId).map(mapNotification);
       }
       throw e;
     }
@@ -225,7 +299,7 @@ export const notificationService = {
       (typeof profileId === 'string' && profileId.startsWith('demo-'))
     ) {
       return DEMO_NOTIFICATIONS_STORE.filter(
-        n => (n.profile_id === profileId || profileId === 'demo-jamaah-id-456') && !n.is_read
+        n => n.profile_id === profileId && !n.is_read
       ).length;
     }
 
@@ -244,9 +318,146 @@ export const notificationService = {
       return count || 0;
     } catch (e) {
       if (typeof profileId === 'string' && profileId.startsWith('demo-')) {
-        return DEMO_NOTIFICATIONS_STORE.filter(n => !n.is_read).length;
+        return DEMO_NOTIFICATIONS_STORE.filter(n => n.profile_id === profileId && !n.is_read).length;
       }
       return 0;
+    }
+  },
+
+  /**
+   * Mengirimkan notifikasi ke seluruh administrator.
+   * Mendukung mode demo dan integrasi RPC / trigger Supabase.
+   */
+  notifyAdmins: async ({
+    type = 'admin_new_payment',
+    title,
+    message,
+    jamaahId = null,
+    relatedPaymentId = null,
+    relatedTermId = null,
+    dedupKey = null,
+    caller = null
+  }) => {
+    // Validasi otorisasi jika konteks pemanggil disediakan
+    if (caller) {
+      verifyNotifyAdminsAuthorizationContext(caller);
+    }
+
+    if (!ALLOWED_NOTIFICATION_TYPES.includes(type)) {
+      throw new Error(`Tipe notifikasi tidak valid: ${type}`);
+    }
+
+    const demoAdminId = 'demo-admin-id-123';
+    const uniqueDedup = dedupKey || `admin_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    // 1. Tambahkan ke Demo Store jika di mode demo
+    const isDuplicate = DEMO_NOTIFICATIONS_STORE.some(n => n.dedup_key === uniqueDedup);
+    if (!isDuplicate) {
+      const newAdminItem = {
+        id: `demo-notif-admin-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        profile_id: demoAdminId,
+        jamaah_id: jamaahId,
+        type,
+        title,
+        message,
+        related_payment_id: relatedPaymentId,
+        related_term_id: relatedTermId,
+        is_read: false,
+        read_at: null,
+        dedup_key: uniqueDedup,
+        created_at: new Date().toISOString()
+      };
+      syncDemoStore([newAdminItem, ...DEMO_NOTIFICATIONS_STORE]);
+    } else {
+      broadcastNotificationUpdate();
+    }
+
+    // 2. Jika di lingkungan Supabase live, coba panggil RPC broadcast jika tersedia
+    try {
+      const { error: rpcError } = await supabase.rpc('notify_admins', {
+        p_type: type,
+        p_title: title,
+        p_message: message,
+        p_jamaah_id: jamaahId,
+        p_related_payment_id: relatedPaymentId,
+        p_dedup_prefix: 'admin_call'
+      });
+
+      if (rpcError) {
+        // Non-blocking: database trigger trg_handle_payment_notification / trg_handle_document_notification
+        // otomatis bertindak sebagai garda utama di Supabase
+      }
+    } catch (e) {
+      // Non-blocking
+    }
+
+    return true;
+  },
+
+  /**
+   * Mengirimkan notifikasi ke satu pengguna spesifik (misal verifikasi berkas jamaah).
+   */
+  sendNotification: async ({
+    profileId,
+    jamaahId = null,
+    type = 'general',
+    title,
+    message,
+    relatedPaymentId = null,
+    relatedTermId = null,
+    dedupKey = null
+  }) => {
+    if (!profileId) return false;
+
+    if (!ALLOWED_NOTIFICATION_TYPES.includes(type)) {
+      throw new Error(`Tipe notifikasi tidak valid: ${type}`);
+    }
+
+    const uniqueDedup = dedupKey || `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    if (profileId.startsWith('demo-') || (typeof profileId === 'string' && profileId.includes('demo'))) {
+      const isDuplicate = DEMO_NOTIFICATIONS_STORE.some(n => n.dedup_key === uniqueDedup);
+      if (!isDuplicate) {
+        const newItem = {
+          id: `demo-notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          profile_id: profileId,
+          jamaah_id: jamaahId,
+          type,
+          title,
+          message,
+          related_payment_id: relatedPaymentId,
+          related_term_id: relatedTermId,
+          is_read: false,
+          read_at: null,
+          dedup_key: uniqueDedup,
+          created_at: new Date().toISOString()
+        };
+        syncDemoStore([newItem, ...DEMO_NOTIFICATIONS_STORE]);
+      } else {
+        broadcastNotificationUpdate();
+      }
+      return true;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .insert([{
+          profile_id: profileId,
+          jamaah_id: jamaahId,
+          type,
+          title,
+          message,
+          related_payment_id: relatedPaymentId,
+          related_term_id: relatedTermId,
+          dedup_key: uniqueDedup
+        }]);
+
+      broadcastNotificationUpdate();
+      return !error;
+    } catch (e) {
+      broadcastNotificationUpdate();
+      return false;
     }
   },
 
@@ -260,12 +471,13 @@ export const notificationService = {
       (profileId && profileId.startsWith('demo-')) ||
       (typeof notificationId === 'string' && notificationId.startsWith('demo-'))
     ) {
-      DEMO_NOTIFICATIONS_STORE = DEMO_NOTIFICATIONS_STORE.map(n => {
+      const updated = DEMO_NOTIFICATIONS_STORE.map(n => {
         if (n.id === notificationId) {
           return { ...n, is_read: true, read_at: new Date().toISOString() };
         }
         return n;
       });
+      syncDemoStore(updated);
       return true;
     }
 
@@ -274,6 +486,7 @@ export const notificationService = {
         target_notification_id: notificationId
       });
 
+      broadcastNotificationUpdate();
       if (error) {
         console.error('[notificationService] Error markAsRead:', error.message);
         throw error;
@@ -291,17 +504,19 @@ export const notificationService = {
    */
   markAllAsRead: async (profileId = null) => {
     if (profileId && profileId.startsWith('demo-')) {
-      DEMO_NOTIFICATIONS_STORE = DEMO_NOTIFICATIONS_STORE.map(n => ({
-        ...n,
-        is_read: true,
-        read_at: new Date().toISOString()
-      }));
-      return DEMO_NOTIFICATIONS_STORE.length;
+      const updated = DEMO_NOTIFICATIONS_STORE.map(n => {
+        if (n.profile_id === profileId) {
+          return { ...n, is_read: true, read_at: new Date().toISOString() };
+        }
+        return n;
+      });
+      syncDemoStore(updated);
+      return updated.filter(n => n.profile_id === profileId).length;
     }
 
     try {
       const { data, error } = await supabase.rpc('mark_all_notifications_as_read');
-
+      broadcastNotificationUpdate();
       if (error) {
         console.error('[notificationService] Error markAllAsRead:', error.message);
         throw error;
@@ -346,6 +561,35 @@ export const notificationService = {
     }
   }
 };
+
+/**
+ * Memvalidasi konteks otorisasi pemanggil notify_admins
+ * (Simulasi aturan keamanan berlapis SQL):
+ * - anon: ditolak
+ * - authenticated non-admin: ditolak
+ * - authenticated admin: diizinkan
+ * - service_role: diizinkan
+ * - NULL auth role dengan session postgres: diizinkan
+ * - konteks tidak valid / role NULL dari API: ditolak
+ */
+export function verifyNotifyAdminsAuthorizationContext({ role, isAdmin = false, sessionUser = 'authenticator' }) {
+  if (role === 'anon') {
+    throw new Error('Akses ditolak: Pemanggil anonim tidak diizinkan.');
+  }
+  if (role === 'authenticated') {
+    if (!isAdmin) {
+      throw new Error('Akses ditolak: Hanya administrator yang berhak mengirim notifikasi admin.');
+    }
+    return true;
+  }
+  if (role === 'service_role') {
+    return true;
+  }
+  if ((!role || role === '') && sessionUser === 'postgres') {
+    return true;
+  }
+  throw new Error('Akses ditolak: Konteks otorisasi tidak valid atau tidak memiliki izin.');
+}
 
 /**
  * Memvalidasi konteks otorisasi pemanggil process_installment_reminders

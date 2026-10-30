@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+import { supabase } from './supabase.js';
+import { notificationService } from './notificationService.js';
 
 const PAYMENT_BUCKET = 'payment-proofs';
 
@@ -33,6 +34,15 @@ function mapPayment(p) {
 }
 
 async function getJamaahBilling(jamaahId) {
+  if (typeof jamaahId === 'string' && jamaahId.startsWith('demo-')) {
+    return {
+      jamaah_id: jamaahId,
+      sisa_tagihan: 35000000,
+      total_terbayar: 5000000,
+      package_price: 40000000
+    };
+  }
+
   const { data, error } = await supabase
     .from('v_jamaah_billing_summary')
     .select('*')
@@ -248,14 +258,65 @@ export const paymentService = {
       );
     }
 
+    const tgl = payload.tanggal ?? payload.payment_date;
+    const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
+
+    // Penanganan khusus demo mode
+    if (typeof payload.jamaah_id === 'string' && payload.jamaah_id.startsWith('demo-')) {
+      const demoId = `demo-pay-${Date.now()}`;
+      const demoRecord = {
+        id: demoId,
+        jamaah_id: payload.jamaah_id,
+        payment_method: 'transfer',
+        metode: 'transfer',
+        payment_type: jenis,
+        jenis: jenis,
+        amount: nominalNum,
+        nominal: nominalNum,
+        bank_name: payload.bank_asal ?? payload.bank_name ?? 'Bank Mandiri',
+        bank_asal: payload.bank_asal ?? payload.bank_name ?? 'Bank Mandiri',
+        reference_number: payload.no_referensi ?? payload.reference_number ?? 'TRX-DEMO',
+        no_referensi: payload.no_referensi ?? payload.reference_number ?? 'TRX-DEMO',
+        payment_date: paymentDate,
+        tanggal: paymentDate,
+        status: 'pending',
+        proof_file_path: null,
+        bukti_url: null,
+        admin_notes: '',
+        catatan_admin: '',
+        created_at: new Date().toISOString()
+      };
+      DEMO_PAYMENTS.unshift(demoRecord);
+
+      // Notifikasi instan untuk Jamaah
+      await notificationService.sendNotification({
+        profileId: 'demo-jamaah-id-456',
+        jamaahId: payload.jamaah_id,
+        type: 'payment_submitted',
+        title: 'Konfirmasi Transfer Terkirim',
+        message: `Pengajuan pembayaran transfer sebesar Rp ${nominalNum.toLocaleString('id-ID')} telah kami terima dan sedang menunggu verifikasi admin.`,
+        relatedPaymentId: demoId,
+        dedupKey: `demo_pay_sub_${demoId}`
+      });
+
+      // Notifikasi instan untuk Administrator
+      await notificationService.notifyAdmins({
+        type: 'admin_new_payment',
+        title: 'Pembayaran Transfer Masuk',
+        message: `Jamaah telah mengajukan transfer sebesar Rp ${nominalNum.toLocaleString('id-ID')}. Mohon verifikasi bukti transaksi.`,
+        jamaahId: payload.jamaah_id,
+        relatedPaymentId: demoId,
+        dedupKey: `admin_pay_${demoId}`
+      });
+
+      return mapPayment(demoRecord);
+    }
+
     const proofFile = payload.bukti_file ?? payload.file;
     const proofPath = await uploadPaymentProof(
       proofFile,
       payload.jamaah_id
     );
-
-    const tgl = payload.tanggal ?? payload.payment_date;
-    const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
 
     const { data, error } = await supabase
       .from('payments')
@@ -279,7 +340,41 @@ export const paymentService = {
       throw error;
     }
 
-    return mapPayment(data);
+    const result = mapPayment(data);
+
+    // Kirim notifikasi ke Jamaah dan Admin (non-blocking)
+    try {
+      const { data: jData } = await supabase
+        .from('jamaah')
+        .select('profile_id')
+        .eq('id', payload.jamaah_id)
+        .maybeSingle();
+
+      if (jData?.profile_id) {
+        await notificationService.sendNotification({
+          profileId: jData.profile_id,
+          jamaahId: payload.jamaah_id,
+          type: 'payment_submitted',
+          title: 'Konfirmasi Transfer Terkirim',
+          message: `Pengajuan transfer sebesar Rp ${nominalNum.toLocaleString('id-ID')} berhasil dikirim dan menunggu verifikasi admin.`,
+          relatedPaymentId: data?.id,
+          dedupKey: `pay_submitted_${data?.id}`
+        });
+      }
+
+      await notificationService.notifyAdmins({
+        type: 'admin_new_payment',
+        title: 'Pembayaran Transfer Masuk',
+        message: `Jamaah telah mengajukan transfer sebesar Rp ${nominalNum.toLocaleString('id-ID')}. Mohon verifikasi bukti transaksi.`,
+        jamaahId: payload.jamaah_id,
+        relatedPaymentId: data?.id,
+        dedupKey: `admin_pay_${data?.id}`
+      });
+    } catch (e) {
+      console.warn('[paymentService] notify error:', e);
+    }
+
+    return result;
   },
 
   submitCash: async (payload, adminId) => {
@@ -329,6 +424,46 @@ export const paymentService = {
       throw new Error('Status verifikasi tidak valid.');
     }
 
+    // Penanganan khusus demo mode
+    if (typeof paymentId === 'string' && paymentId.startsWith('demo-')) {
+      const pIdx = DEMO_PAYMENTS.findIndex(p => p.id === paymentId);
+      if (pIdx >= 0) {
+        DEMO_PAYMENTS[pIdx].status = status;
+        DEMO_PAYMENTS[pIdx].verified_by = adminId;
+        DEMO_PAYMENTS[pIdx].verified_at = new Date().toISOString();
+        if (status === 'rejected') {
+          DEMO_PAYMENTS[pIdx].rejection_reason = (catatan || '').trim() || 'Pembayaran ditolak admin.';
+        } else {
+          DEMO_PAYMENTS[pIdx].admin_notes = (catatan || '').trim() || 'Pembayaran diverifikasi admin.';
+        }
+      }
+
+      const amountStr = DEMO_PAYMENTS[pIdx]?.nominal ? ` sebesar Rp ${DEMO_PAYMENTS[pIdx].nominal.toLocaleString('id-ID')}` : '';
+      if (status === 'verified') {
+        await notificationService.sendNotification({
+          profileId: 'demo-jamaah-id-456',
+          jamaahId: 'demo-jamaah-uuid-001',
+          type: 'payment_verified',
+          title: 'Pembayaran Terverifikasi',
+          message: `Alhamdulillah, transfer pembayaran Anda${amountStr} telah diverifikasi sah oleh admin.`,
+          relatedPaymentId: paymentId,
+          dedupKey: `demo_pay_ver_${paymentId}`
+        });
+      } else {
+        await notificationService.sendNotification({
+          profileId: 'demo-jamaah-id-456',
+          jamaahId: 'demo-jamaah-uuid-001',
+          type: 'payment_rejected',
+          title: 'Pembayaran Ditolak',
+          message: `Pengajuan pembayaran Anda ditolak. Alasan: ${(catatan || '').trim() || 'Bukti transfer tidak valid.'}. Silakan ajukan ulang.`,
+          relatedPaymentId: paymentId,
+          dedupKey: `demo_pay_rej_${paymentId}`
+        });
+      }
+
+      return DEMO_PAYMENTS[pIdx] ? mapPayment(DEMO_PAYMENTS[pIdx]) : null;
+    }
+
     const updateData = {
       status,
       verified_by: adminId || null,
@@ -356,6 +491,10 @@ export const paymentService = {
       console.error('[paymentService] Error verifyTransfer:', error.message);
       throw error;
     }
+
+    // Trigger pembaruan real-time ke UI
+    notificationService.broadcastNotificationUpdate?.();
+
     return mapPayment(data);
   },
 

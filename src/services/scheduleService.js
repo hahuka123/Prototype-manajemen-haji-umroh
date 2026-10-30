@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { notificationService } from './notificationService';
 
 const DEMO_SCHEDULES = [
   {
@@ -148,6 +149,30 @@ export const scheduleService = {
       description: (payload.description ?? payload.deskripsi ?? '').trim() || null
     };
 
+    if (typeof insertData.package_id === 'string' && insertData.package_id.startsWith('demo-')) {
+      const demoItem = {
+        id: `demo-sch-${Date.now()}`,
+        ...insertData,
+        tanggal: insertData.date,
+        tanggal_keberangkatan: insertData.date,
+        waktu: insertData.time.slice(0, 5),
+        kegiatan: insertData.activity,
+        lokasi: insertData.location,
+        deskripsi: insertData.description
+      };
+      DEMO_SCHEDULES.push(demoItem);
+
+      await notificationService.sendNotification({
+        profileId: 'demo-jamaah-id-456',
+        type: 'general',
+        title: 'Agenda Perjalanan Baru',
+        message: `Agenda baru telah ditambahkan: "${insertData.activity}" pada ${insertData.date} pukul ${insertData.time.slice(0, 5)}.`,
+        dedupKey: `agenda_${demoItem.id}`
+      });
+
+      return formatSchedule(demoItem);
+    }
+
     const { data, error } = await supabase
       .from('schedules')
       .insert([insertData])
@@ -158,6 +183,19 @@ export const scheduleService = {
       console.error('[scheduleService] Error create:', error.message);
       throw error;
     }
+
+    try {
+      await notificationService.sendNotification({
+        profileId: 'demo-jamaah-id-456',
+        type: 'general',
+        title: 'Agenda Perjalanan Baru',
+        message: `Agenda baru telah ditambahkan: "${insertData.activity}" pada ${insertData.date} pukul ${insertData.time.slice(0, 5)}.`,
+        dedupKey: `agenda_${data?.id}`
+      });
+    } catch (e) {
+      // non-blocking
+    }
+
     return formatSchedule(data);
   },
 

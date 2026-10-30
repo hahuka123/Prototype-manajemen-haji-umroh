@@ -1,12 +1,19 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   mapNotification,
   getDaysDifference,
   isDueReminderEligible,
   generateReminderNotificationPayload,
-  notificationService
+  notificationService,
+  ALLOWED_NOTIFICATION_TYPES,
+  verifyNotifyAdminsAuthorizationContext,
+  resetDemoNotificationsStore
 } from '../src/services/notificationService.js';
+import { documentService } from '../src/services/documentService.js';
+import { paymentService } from '../src/services/paymentService.js';
 
 describe('Model Data & Layanan Notifikasi In-App (Haji & Umrah)', () => {
   const mockTermUnpaid = {
@@ -299,6 +306,324 @@ describe('Model Data & Layanan Notifikasi In-App (Haji & Umrah)', () => {
       const result = delayedFetchForA();
       // Guard harus menolak commit data user-A ke state user-B
       assert.equal(result.shouldCommit, false);
+    });
+  });
+
+  describe('7. Notifikasi Administrator (Pembayaran & Dokumen Masuk)', () => {
+    it('7.1 notifyAdmins berhasil menambahkan notifikasi baru untuk administrator', async () => {
+      const initialAdminUnread = await notificationService.getUnreadCount('demo-admin-id-123');
+      assert.equal(initialAdminUnread, 0);
+
+      await notificationService.notifyAdmins({
+        type: 'admin_new_payment',
+        title: 'Pembayaran Transfer Masuk',
+        message: 'Jamaah Uji telah mengajukan transfer sebesar Rp 5.000.000.',
+        jamaahId: 'demo-jamaah-uuid-001',
+        dedupKey: 'test-admin-pay-dedup-1'
+      });
+
+      const updatedAdminUnread = await notificationService.getUnreadCount('demo-admin-id-123');
+      assert.equal(updatedAdminUnread, 1);
+
+      const adminList = await notificationService.getNotifications('demo-admin-id-123');
+      assert.equal(adminList.length, 1);
+      assert.equal(adminList[0].type, 'admin_new_payment');
+      assert.equal(adminList[0].title, 'Pembayaran Transfer Masuk');
+      assert.equal(adminList[0].is_read, false);
+    });
+
+    it('7.2 Deduplikasi notifikasi admin (idempotensi dedup_key)', async () => {
+      // Panggil ulang dengan dedup_key yang sama
+      await notificationService.notifyAdmins({
+        type: 'admin_new_payment',
+        title: 'Pembayaran Transfer Masuk',
+        message: 'Jamaah Uji telah mengajukan transfer sebesar Rp 5.000.000.',
+        jamaahId: 'demo-jamaah-uuid-001',
+        dedupKey: 'test-admin-pay-dedup-1'
+      });
+
+      const adminUnread = await notificationService.getUnreadCount('demo-admin-id-123');
+      assert.equal(adminUnread, 1); // Tidak menduplikasi
+    });
+
+    it('7.3 Administrator dapat menandai notifikasinya sebagai dibaca', async () => {
+      const adminList = await notificationService.getNotifications('demo-admin-id-123');
+      const targetId = adminList[0].id;
+
+      const success = await notificationService.markAsRead(targetId, 'demo-admin-id-123');
+      assert.equal(success, true);
+
+      const unreadAfter = await notificationService.getUnreadCount('demo-admin-id-123');
+      assert.equal(unreadAfter, 0);
+    });
+  });
+
+  describe('8. Uji Alur Notifikasi Dokumen (Unggah, Verifikasi, Penolakan)', () => {
+    const demoJamaahUuid = 'demo-jamaah-uuid-001';
+    const demoJamaahProfileId = 'demo-jamaah-id-456';
+    const demoAdminProfileId = 'demo-admin-id-123';
+
+    it('8.1 Jamaah mengunggah dokumen: Jamaah menerima document_submitted dan Admin menerima admin_new_document', async () => {
+      resetDemoNotificationsStore();
+
+      const mockFile = { name: 'pasfoto_terbaru.jpg', size: 102400, type: 'image/jpeg' };
+      const uploadResult = await documentService.uploadDocument(demoJamaahUuid, 'foto', mockFile);
+      assert.ok(uploadResult);
+      assert.equal(uploadResult.status, 'Menunggu Verifikasi');
+
+      // Cek notifikasi jamaah
+      const jamaahNotifs = await notificationService.getNotifications(demoJamaahProfileId);
+      const submitNotif = jamaahNotifs.find(n => n.type === 'document_submitted');
+      assert.ok(submitNotif, 'Notifikasi document_submitted untuk Jamaah harus ada');
+      assert.match(submitNotif.title, /Dokumen Berhasil Diunggah/);
+      assert.match(submitNotif.message, /Pas Foto/);
+
+      // Cek notifikasi admin
+      const adminNotifs = await notificationService.getNotifications(demoAdminProfileId);
+      const adminDocNotif = adminNotifs.find(n => n.type === 'admin_new_document');
+      assert.ok(adminDocNotif, 'Notifikasi admin_new_document untuk Admin harus ada');
+      assert.match(adminDocNotif.title, /Berkas Dokumen Masuk/);
+      assert.match(adminDocNotif.message, /Pas Foto/);
+    });
+
+    it('8.2 Admin memverifikasi dokumen: Jamaah menerima notifikasi document_verified', async () => {
+      const verifyResult = await documentService.verifyDocument(
+        demoJamaahUuid,
+        'foto',
+        'Lengkap',
+        'Pas foto telah memenuhi ketentuan visa.'
+      );
+      assert.ok(verifyResult);
+      assert.equal(verifyResult.status, 'Lengkap');
+
+      const jamaahNotifs = await notificationService.getNotifications(demoJamaahProfileId);
+      const verifiedNotif = jamaahNotifs.find(n => n.type === 'document_verified');
+      assert.ok(verifiedNotif, 'Notifikasi document_verified untuk Jamaah harus ada');
+      assert.match(verifiedNotif.title, /Dokumen Diverifikasi/);
+      assert.match(verifiedNotif.message, /dinyatakan Lengkap/);
+    });
+
+    it('8.3 Admin menolak dokumen: Jamaah menerima notifikasi document_rejected dengan catatan perbaikan', async () => {
+      const rejectionNote = 'Foto terpotong dan resolusi terlalu rendah. Harap unggah ulang foto 4x6.';
+      const rejectResult = await documentService.verifyDocument(
+        demoJamaahUuid,
+        'foto',
+        'Ditolak',
+        rejectionNote
+      );
+      assert.ok(rejectResult);
+      assert.equal(rejectResult.status, 'Ditolak');
+
+      const jamaahNotifs = await notificationService.getNotifications(demoJamaahProfileId);
+      const rejectedNotif = jamaahNotifs.find(n => n.type === 'document_rejected');
+      assert.ok(rejectedNotif, 'Notifikasi document_rejected untuk Jamaah harus ada');
+      assert.match(rejectedNotif.title, /Dokumen Perlu Perbaikan/);
+      assert.match(rejectedNotif.message, /Foto terpotong/);
+    });
+  });
+
+  describe('9. Pengamanan notify_admins() & Kontrol Hak Akses', () => {
+    it('9.1 Pemanggil anon ditolak secara eksplisit', () => {
+      assert.throws(
+        () => verifyNotifyAdminsAuthorizationContext({ role: 'anon', isAdmin: false }),
+        /Pemanggil anonim tidak diizinkan/
+      );
+    });
+
+    it('9.2 Jamaah biasa (authenticated non-admin) ditolak memanggil notify_admins', async () => {
+      // Validasi logika keamanan konteks
+      assert.throws(
+        () => verifyNotifyAdminsAuthorizationContext({ role: 'authenticated', isAdmin: false }),
+        /Hanya administrator yang berhak mengirim notifikasi admin/
+      );
+
+      // Panggilan langsung dengan konteks jamaah ditolak
+      await assert.rejects(
+        async () => {
+          await notificationService.notifyAdmins({
+            type: 'admin_new_payment',
+            title: 'Spam Notif',
+            message: 'Percobaan injeksi notifikasi oleh jamaah',
+            caller: { role: 'authenticated', isAdmin: false }
+          });
+        },
+        /Hanya administrator yang berhak mengirim notifikasi admin/
+      );
+    });
+
+    it('9.3 Admin sah (authenticated admin) diizinkan memanggil notify_admins', async () => {
+      const allowed = verifyNotifyAdminsAuthorizationContext({ role: 'authenticated', isAdmin: true });
+      assert.equal(allowed, true);
+
+      const success = await notificationService.notifyAdmins({
+        type: 'admin_new_document',
+        title: 'Notifikasi Resmi Admin',
+        message: 'Pengumuman internal antar administrator.',
+        caller: { role: 'authenticated', isAdmin: true }
+      });
+      assert.equal(success, true);
+    });
+
+    it('9.4 Backend service_role diizinkan', () => {
+      const allowed = verifyNotifyAdminsAuthorizationContext({ role: 'service_role' });
+      assert.equal(allowed, true);
+    });
+
+    it('9.5 Konteks internal postgres diizinkan dan konteks API tak berizin ditolak', () => {
+      const postgresAllowed = verifyNotifyAdminsAuthorizationContext({ role: null, sessionUser: 'postgres' });
+      assert.equal(postgresAllowed, true);
+
+      assert.throws(
+        () => verifyNotifyAdminsAuthorizationContext({ role: null, sessionUser: 'authenticator' }),
+        /Konteks otorisasi tidak valid/
+      );
+      assert.throws(
+        () => verifyNotifyAdminsAuthorizationContext({ role: '', sessionUser: 'authenticator' }),
+        /Konteks otorisasi tidak valid/
+      );
+    });
+
+    it('9.6 Tipe notifikasi di luar 13 tipe yang diizinkan ditolak oleh validasi sistem', async () => {
+      await assert.rejects(
+        async () => {
+          await notificationService.notifyAdmins({
+            type: 'arbitrary_spam_type',
+            title: 'Ilegal',
+            message: 'Tipe tidak ada di CHECK constraint'
+          });
+        },
+        /Tipe notifikasi tidak valid/
+      );
+    });
+  });
+
+  describe('10. Preservasi Notifikasi Pembayaran Lama & Pengingat Siklus', () => {
+    it('10.1 Alur notifikasi pembayaran (submitted, verified, rejected) tetap berjalan normal', async () => {
+      resetDemoNotificationsStore();
+
+      // Submit transfer
+      const payment = await paymentService.submitTransfer({
+        jamaah_id: 'demo-jamaah-uuid-001',
+        nominal: 2500000,
+        bukti_file: { name: 'transfer_dp.jpg', size: 50000 }
+      });
+      assert.ok(payment);
+
+      const jamaahNotifs = await notificationService.getNotifications('demo-jamaah-id-456');
+      const paySubNotif = jamaahNotifs.find(n => n.type === 'payment_submitted');
+      assert.ok(paySubNotif, 'payment_submitted harus dibuat');
+
+      const adminNotifs = await notificationService.getNotifications('demo-admin-id-123');
+      const adminPayNotif = adminNotifs.find(n => n.type === 'admin_new_payment');
+      assert.ok(adminPayNotif, 'admin_new_payment harus dibuat');
+
+      // Verify payment
+      await paymentService.verifyTransfer(payment.id, 'demo-admin-id-123', 'verified', 'Transfer valid');
+      const updatedJamaahNotifs = await notificationService.getNotifications('demo-jamaah-id-456');
+      const payVerNotif = updatedJamaahNotifs.find(n => n.type === 'payment_verified');
+      assert.ok(payVerNotif, 'payment_verified harus dibuat saat verifikasi');
+    });
+
+    it('10.2 Seluruh 13 tipe notifikasi resmi tercakup dalam ALLOWED_NOTIFICATION_TYPES', () => {
+      const requiredTypes = [
+        'payment_verified',
+        'payment_rejected',
+        'payment_submitted',
+        'payment_cash',
+        'due_h7',
+        'due_h1',
+        'overdue',
+        'document_submitted',
+        'document_verified',
+        'document_rejected',
+        'admin_new_payment',
+        'admin_new_document',
+        'general'
+      ];
+
+      for (const t of requiredTypes) {
+        assert.ok(ALLOWED_NOTIFICATION_TYPES.includes(t), `Tipe "${t}" wajib terdaftar dalam ALLOWED_NOTIFICATION_TYPES`);
+      }
+      assert.equal(ALLOWED_NOTIFICATION_TYPES.length, 13);
+    });
+
+    it('10.3 Pengingat termin H-7, H-1, dan overdue tetap berjalan sesuai aturan kalender dan supresi', () => {
+      // H-7
+      assert.equal(isDueReminderEligible({ term: mockTermUnpaid, type: 'due_h7', currentDateStr: '2026-10-25' }), true);
+      // H-1
+      assert.equal(isDueReminderEligible({ term: mockTermUnpaid, type: 'due_h1', currentDateStr: '2026-10-31' }), true);
+      // Overdue
+      assert.equal(isDueReminderEligible({ term: mockTermUnpaid, type: 'overdue', currentDateStr: '2026-11-05' }), true);
+      // Supresi lunas
+      assert.equal(isDueReminderEligible({ term: mockTermPaid, type: 'due_h7', currentDateStr: '2026-10-08' }), false);
+      assert.equal(isDueReminderEligible({ term: mockTermPaid, type: 'overdue', currentDateStr: '2026-10-25' }), false);
+      // Supresi pending
+      assert.equal(isDueReminderEligible({ term: mockTermPending, type: 'overdue', currentDateStr: '2026-10-25' }), false);
+    });
+  });
+
+  describe('11. Uji Statis Integritas Skrip Migrasi SQL (20261030100000)', () => {
+    const migrationFilePath = path.resolve(
+      process.cwd(),
+      'supabase/migrations/20261030100000_update_notifications_constraint_and_secure_notify_admins.sql'
+    );
+
+    it('11.1 File migrasi pembaruan constraint & keamanan notify_admins tersedia di repositori', () => {
+      assert.ok(fs.existsSync(migrationFilePath), 'File migrasi 20261030100000 wajib ada di supabase/migrations');
+    });
+
+    it('11.2 Skrip migrasi memuat penghapusan dinamis check constraint lama pada kolom type', () => {
+      const sql = fs.readFileSync(migrationFilePath, 'utf8');
+      assert.match(sql, /pg_constraint con/);
+      assert.match(sql, /relname = 'notifications'/);
+      assert.match(sql, /pg_get_constraintdef\(con\.oid\) LIKE '%type%'/);
+      assert.match(sql, /ALTER TABLE public\.notifications DROP CONSTRAINT IF EXISTS/);
+    });
+
+    it('11.3 Skrip migrasi memuat CHECK constraint notifications_type_check dengan seluruh 13 tipe', () => {
+      const sql = fs.readFileSync(migrationFilePath, 'utf8');
+      const expectedTypes = [
+        'payment_verified',
+        'payment_rejected',
+        'payment_submitted',
+        'payment_cash',
+        'due_h7',
+        'due_h1',
+        'overdue',
+        'document_submitted',
+        'document_verified',
+        'document_rejected',
+        'admin_new_payment',
+        'admin_new_document',
+        'general'
+      ];
+      for (const t of expectedTypes) {
+        assert.ok(sql.includes(`'${t}'`), `File migrasi SQL wajib mencantumkan '${t}' pada CHECK constraint`);
+      }
+    });
+
+    it('11.4 Skrip migrasi memvalidasi public.is_admin() untuk role authenticated di dalam notify_admins', () => {
+      const sql = fs.readFileSync(migrationFilePath, 'utf8');
+      assert.match(sql, /IF NOT public\.is_admin\(\) THEN/);
+      assert.match(sql, /RAISE EXCEPTION 'Akses ditolak: Hanya administrator yang berhak mengirim notifikasi admin\.'/);
+    });
+
+    it('11.5 Skrip migrasi mencabut hak eksekusi notify_admins dari PUBLIC dan anon', () => {
+      const sql = fs.readFileSync(migrationFilePath, 'utf8');
+      assert.match(sql, /REVOKE ALL ON FUNCTION public\.notify_admins.*FROM PUBLIC;/);
+      assert.match(sql, /REVOKE ALL ON FUNCTION public\.notify_admins.*FROM anon;/);
+    });
+
+    it('11.6 Skrip migrasi membatasi pemberian hak eksekusi hanya kepada authenticated dan service_role', () => {
+      const sql = fs.readFileSync(migrationFilePath, 'utf8');
+      assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.notify_admins.*TO authenticated;/);
+      assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.notify_admins.*TO service_role;/);
+    });
+
+    it('11.7 Trigger dokumen trg_handle_document_notification dilengkapi blok EXCEPTION non-fatal', () => {
+      const sql = fs.readFileSync(migrationFilePath, 'utf8');
+      assert.match(sql, /EXCEPTION\s+WHEN OTHERS THEN/);
+      assert.match(sql, /RAISE WARNING 'trg_handle_document_notification non-fatal error: %', SQLERRM;/);
     });
   });
 });

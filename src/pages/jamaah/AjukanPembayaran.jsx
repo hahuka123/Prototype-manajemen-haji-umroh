@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Upload, Send, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
@@ -7,17 +7,20 @@ import { useAuth } from '../../hooks/useAuth';
 
 export default function JamaahAjukanPembayaran() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const paramTermin = searchParams.get('termin');
+  const paramNominal = searchParams.get('nominal');
   const { user, profile } = useAuth();
 
   const [sisaTagihan, setSisaTagihan] = useState(0);
   const [jamaah, setJamaah] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [paymentType, setPaymentType] = useState('installment'); // 'full' | 'installment'
+  const [paymentType, setPaymentType] = useState(paramNominal ? 'installment' : 'installment'); // 'full' | 'installment'
   const [amount, setAmount] = useState('');
   const [bankName, setBankName] = useState('Bank Syariah Indonesia (BSI)');
   const [refNumber, setRefNumber] = useState('');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(paramTermin ? `Pembayaran Termin #${paramTermin}` : '');
   const [proofFile, setProofFile] = useState(null);
   const [proofFileName, setProofFileName] = useState('');
   const [isSuccess, setIsSuccess] = useState(false);
@@ -34,8 +37,18 @@ export default function JamaahAjukanPembayaran() {
         const j = await jamaahService.getMyJamaah(profile.id);
         setJamaah(j);
         if (j) {
-          setSisaTagihan(Number(j.sisa_tagihan || 0));
-          setAmount(String(j.sisa_tagihan || 0));
+          const sisa = Number(j.sisa_tagihan || 0);
+          setSisaTagihan(sisa);
+          if (paramNominal) {
+            setPaymentType('installment');
+            const targetNom = Math.min(Number(paramNominal), sisa);
+            setAmount(String(targetNom));
+            if (paramTermin) {
+              setNotes(`Pembayaran Termin #${paramTermin}`);
+            }
+          } else {
+            setAmount(String(sisa));
+          }
         }
       } catch (err) {
         console.error(err);
@@ -45,7 +58,7 @@ export default function JamaahAjukanPembayaran() {
       }
     };
     fetchData();
-  }, [profile?.id]);
+  }, [profile?.id, paramNominal, paramTermin]);
 
   function handleTypeChange(type) {
     setPaymentType(type);
@@ -170,6 +183,26 @@ export default function JamaahAjukanPembayaran() {
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
+            {paramTermin && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '12px 14px',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: 'var(--radius-md)',
+                color: '#1e40af',
+                fontSize: '0.85rem',
+                marginBottom: '18px'
+              }}>
+                <Info size={18} />
+                <span>
+                  Pengajuan ini disesuaikan untuk pembayaran <strong>Termin #{paramTermin}</strong>. Nominal otomatis diisi sesuai sisa kewajiban termin Anda.
+                </span>
+              </div>
+            )}
+
             {errorMsg && (
               <div style={{
                 display: 'flex',

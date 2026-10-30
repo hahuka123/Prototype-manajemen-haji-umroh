@@ -4,13 +4,16 @@ import { jamaahService } from '../../services/jamaahService';
 import { documentService } from '../../services/documentService';
 import { packageService } from '../../services/packageService';
 import { scheduleService } from '../../services/scheduleService';
-import { ArrowLeft, CheckCircle, FileText, User, CreditCard, AlertTriangle } from 'lucide-react';
+import { installmentService } from '../../services/installmentService';
+import PaymentStatusBadge from '../../components/PaymentStatusBadge';
+import { ArrowLeft, CheckCircle, FileText, User, CreditCard, AlertTriangle, Calendar } from 'lucide-react';
 
 export default function AdminDetailJamaah() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [jamaah, setJamaah] = useState(null);
   const [dokumen, setDokumen] = useState([]);
+  const [terms, setTerms] = useState([]);
   const [paket, setPaket] = useState(null);
   const [jadwal, setJadwal] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,6 +28,9 @@ export default function AdminDetailJamaah() {
         
         const d = await documentService.getDocumentsByJamaah(id);
         setDokumen(d);
+
+        const t = await installmentService.getTermsByJamaah(id);
+        setTerms(t || []);
         
         if (j.paket_id) {
             const p = await packageService.getPackages();
@@ -121,6 +127,87 @@ export default function AdminDetailJamaah() {
                     <tr><td>Keberangkatan</td><td>{paket?.departure_date ? new Date(paket.departure_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : (jadwal?.tanggal_keberangkatan || '-')}</td></tr>
                 </tbody>
             </table>
+        </div>
+      </div>
+
+      {/* Jadwal Termin Cicilan */}
+      <div className="card" style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Calendar size={18} className="text-primary" /> Jadwal Termin Cicilan
+          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="status-badge neutral" style={{ fontSize: '0.75rem' }}>
+              {terms.filter(t => t.status === 'paid').length} dari {terms.length} Termin Lunas
+            </span>
+          </div>
+        </div>
+
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: '90px' }}>Termin</th>
+                <th>Keterangan</th>
+                <th>Jatuh Tempo</th>
+                <th style={{ textAlign: 'right' }}>Target Tagihan</th>
+                <th style={{ textAlign: 'right' }}>Terbayar Sah</th>
+                <th style={{ textAlign: 'right' }}>Sisa Termin</th>
+                <th style={{ textAlign: 'center' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {terms.length === 0 ? (
+                <tr>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                    Belum ada jadwal termin cicilan untuk jamaah ini.
+                  </td>
+                </tr>
+              ) : (
+                terms.map((term) => {
+                  const targetNominal = Number(term.target_amount ?? term.amount ?? 0);
+                  const verifiedNominal = Number(term.verified_amount ?? 0);
+                  const remainingNominal = Number(term.remaining_amount ?? Math.max(0, targetNominal - verifiedNominal));
+
+                  return (
+                    <tr key={term.id || term.term_id || term.term_number}>
+                      <td style={{ fontWeight: 700 }}>Termin #{term.term_number}</td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{term.title || `Cicilan Tahap ${term.term_number}`}</div>
+                        {term.notes && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{term.notes}</div>
+                        )}
+                        {Number(term.pending_amount || 0) > 0 && (
+                          <div style={{ fontSize: '0.72rem', color: '#d97706' }}>
+                            (Ada Rp {Number(term.pending_amount).toLocaleString('id-ID')} pending verifikasi)
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {term.due_date ? new Date(term.due_date).toLocaleDateString('id-ID', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                        Rp {targetNominal.toLocaleString('id-ID')}
+                      </td>
+                      <td style={{ textAlign: 'right', color: verifiedNominal > 0 ? 'var(--success-color)' : 'var(--text-muted)', fontWeight: 600 }}>
+                        Rp {verifiedNominal.toLocaleString('id-ID')}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                        Rp {remainingNominal.toLocaleString('id-ID')}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <PaymentStatusBadge status={term.status} />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { notificationService } from './notificationService.js';
 
 export const REQUIRED_DOCUMENTS = ['ktp', 'kk', 'passport', 'foto', 'buku-nikah', 'kesehatan'];
 const DOCUMENTS_BUCKET = 'documents';
@@ -170,7 +171,58 @@ export const documentService = {
   // Upload a document (Jamaah)
   uploadDocument: async (jamaahId, tipe, file) => {
     const docType = tipe;
-    // 1. Upload to Storage (Private)
+    const docLabelMap = {
+      ktp: 'KTP', kk: 'Kartu Keluarga (KK)', passport: 'Paspor',
+      foto: 'Pas Foto', 'buku-nikah': 'Buku Nikah', kesehatan: 'Surat Kesehatan'
+    };
+    const labelDoc = docLabelMap[docType] || docType;
+
+    // 1. Dukungan Demo Mode
+    if (typeof jamaahId === 'string' && jamaahId.startsWith('demo-')) {
+      const foundIdx = DEMO_DOCUMENTS.findIndex(
+        d => d.jamaah_id === jamaahId && (d.tipe === docType || d.document_type === docType)
+      );
+      const demoItem = {
+        id: foundIdx >= 0 ? DEMO_DOCUMENTS[foundIdx].id : `demo-doc-${Date.now()}`,
+        jamaah_id: jamaahId,
+        tipe: docType,
+        document_type: docType,
+        status: 'Menunggu Verifikasi',
+        catatan: '',
+        notes: '',
+        url: null,
+        file_path: `demo/${jamaahId}/${file.name}`,
+        updated_at: new Date().toISOString()
+      };
+      if (foundIdx >= 0) {
+        DEMO_DOCUMENTS[foundIdx] = demoItem;
+      } else {
+        DEMO_DOCUMENTS.push(demoItem);
+      }
+
+      // Notifikasi instan untuk Jamaah
+      await notificationService.sendNotification({
+        profileId: 'demo-jamaah-id-456',
+        jamaahId: jamaahId,
+        type: 'document_submitted',
+        title: 'Dokumen Berhasil Diunggah',
+        message: `Berkas ${labelDoc} Anda berhasil diunggah dan kini berstatus Menunggu Verifikasi oleh admin travel.`,
+        dedupKey: `demo_jamaah_doc_${jamaahId}_${docType}_${Date.now()}`
+      });
+
+      // Notifikasi instan untuk Administrator
+      await notificationService.notifyAdmins({
+        type: 'admin_new_document',
+        title: 'Berkas Dokumen Masuk',
+        message: `Jamaah telah mengunggah berkas ${labelDoc}. Mohon lakukan verifikasi berkas.`,
+        jamaahId: jamaahId,
+        dedupKey: `demo_admin_doc_${jamaahId}_${docType}_${Date.now()}`
+      });
+
+      return demoItem;
+    }
+
+    // 2. Upload to Storage (Private)
     const fileExt = file.name.split('.').pop();
     const fileName = `${jamaahId}_${docType}_${Date.now()}.${fileExt}`;
     const filePath = `${jamaahId}/${fileName}`;
@@ -183,7 +235,7 @@ export const documentService = {
 
     if (uploadError) throw uploadError;
 
-    // 2. Upsert record in database with private relative filePath
+    // 3. Upsert record in database with private relative filePath
     const { data: existing } = await supabase
         .from('documents')
         .select('id')
@@ -226,6 +278,36 @@ export const documentService = {
     // Sinkronisasi status ke tabel jamaah secara asinkron
     await documentService.syncJamaahDocumentStatus(jamaahId);
 
+    // Kirim notifikasi ke Jamaah dan Admin (non-blocking)
+    try {
+      const { data: jData } = await supabase
+        .from('jamaah')
+        .select('profile_id')
+        .eq('id', jamaahId)
+        .maybeSingle();
+
+      if (jData?.profile_id) {
+        await notificationService.sendNotification({
+          profileId: jData.profile_id,
+          jamaahId: jamaahId,
+          type: 'document_submitted',
+          title: 'Dokumen Berhasil Diunggah',
+          message: `Berkas ${labelDoc} Anda berhasil diunggah dan kini berstatus Menunggu Verifikasi oleh admin biro.`,
+          dedupKey: `jamaah_doc_${newDoc.id}_${Date.now()}`
+        });
+      }
+
+      await notificationService.notifyAdmins({
+        type: 'admin_new_document',
+        title: 'Berkas Dokumen Masuk',
+        message: `Jamaah telah mengunggah dokumen ${labelDoc}. Mohon lakukan verifikasi berkas.`,
+        jamaahId: jamaahId,
+        dedupKey: `admin_doc_${newDoc.id}_${Date.now()}`
+      });
+    } catch (e) {
+      console.warn('[documentService] notify exception:', e);
+    }
+
     return {
       id: newDoc.id,
       jamaah_id: newDoc.jamaah_id,
@@ -243,6 +325,47 @@ export const documentService = {
   // Verify document (Admin)
   verifyDocument: async (jamaahId, tipe, status, catatan = '') => {
     const docType = tipe;
+    const docLabelMap = {
+      ktp: 'KTP', kk: 'Kartu Keluarga (KK)', passport: 'Paspor',
+      foto: 'Pas Foto', 'buku-nikah': 'Buku Nikah', kesehatan: 'Surat Kesehatan'
+    };
+    const labelDoc = docLabelMap[docType] || docType;
+
+    // Dukungan Demo Mode
+    if (typeof jamaahId === 'string' && jamaahId.startsWith('demo-')) {
+      const foundIdx = DEMO_DOCUMENTS.findIndex(
+        d => d.jamaah_id === jamaahId && (d.tipe === docType || d.document_type === docType)
+      );
+      if (foundIdx >= 0) {
+        DEMO_DOCUMENTS[foundIdx].status = status;
+        DEMO_DOCUMENTS[foundIdx].catatan = catatan;
+        DEMO_DOCUMENTS[foundIdx].notes = catatan;
+        DEMO_DOCUMENTS[foundIdx].updated_at = new Date().toISOString();
+      }
+
+      if (status === 'Lengkap') {
+        await notificationService.sendNotification({
+          profileId: 'demo-jamaah-id-456',
+          jamaahId,
+          type: 'document_verified',
+          title: 'Dokumen Diverifikasi',
+          message: `Alhamdulillah, berkas ${labelDoc} Anda telah diverifikasi dan dinyatakan Lengkap oleh admin.`,
+          dedupKey: `demo_doc_ver_${docType}_${Date.now()}`
+        });
+      } else if (status === 'Ditolak') {
+        await notificationService.sendNotification({
+          profileId: 'demo-jamaah-id-456',
+          jamaahId,
+          type: 'document_rejected',
+          title: 'Dokumen Perlu Perbaikan',
+          message: `Berkas ${labelDoc} Anda ditolak. Catatan: ${catatan || 'Mohon unggah perbaikan berkas.'}`,
+          dedupKey: `demo_doc_rej_${docType}_${Date.now()}`
+        });
+      }
+
+      return { status, notes: catatan };
+    }
+
     const { data: existing, error: findError } = await supabase
         .from('documents')
         .select('id, file_path')
@@ -252,7 +375,7 @@ export const documentService = {
         
     if (findError) throw findError;
     if (!existing) throw new Error('Dokumen tidak ditemukan.');
-    
+        
     const { data, error } = await supabase
         .from('documents')
         .update({
@@ -265,7 +388,7 @@ export const documentService = {
         .single();
         
     if (error) throw error;
-    
+        
     let signedUrl = null;
     if (data.file_path) {
       signedUrl = await documentService.getDocumentUrl(data.file_path);

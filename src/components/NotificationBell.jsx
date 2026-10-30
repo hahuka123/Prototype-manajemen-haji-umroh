@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Bell, 
   CheckCheck, 
@@ -8,13 +9,15 @@ import {
   AlertTriangle, 
   CreditCard,
   Banknote,
+  FileText,
   X 
 } from 'lucide-react';
 import { notificationService } from '../services/notificationService';
 import { useAuth } from '../hooks/useAuth';
 
 export default function NotificationBell() {
-  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const { profile, role } = useAuth();
   const profileId = profile?.id;
 
   const [isOpen, setIsOpen] = useState(false);
@@ -59,12 +62,38 @@ export default function NotificationBell() {
       }
     };
 
+    const fetchList = async () => {
+      try {
+        const data = await notificationService.getNotifications(activeId);
+        if (isMounted && currentProfileIdRef.current === activeId) {
+          setNotifications(data || []);
+        }
+      } catch (e) {
+        // Ignore
+      }
+    };
+
     fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
+
+    // Event listener untuk sinkronisasi real-time instan tanpa refresh
+    const handleNotificationUpdate = () => {
+      if (isMounted && currentProfileIdRef.current === activeId) {
+        fetchUnread();
+        fetchList();
+      }
+    };
+
+    window.addEventListener('notification-updated', handleNotificationUpdate);
+    window.addEventListener('storage', handleNotificationUpdate);
+
+    // Polling background setiap 6 detik
+    const interval = setInterval(fetchUnread, 6000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
+      window.removeEventListener('notification-updated', handleNotificationUpdate);
+      window.removeEventListener('storage', handleNotificationUpdate);
     };
   }, [profileId]);
 
@@ -139,13 +168,19 @@ export default function NotificationBell() {
   const renderIcon = (type) => {
     switch (type) {
       case 'payment_verified':
+      case 'document_verified':
         return <CheckCircle size={18} style={{ color: 'var(--success-color, #10b981)', flexShrink: 0 }} />;
       case 'payment_rejected':
+      case 'document_rejected':
         return <XCircle size={18} style={{ color: 'var(--danger-color, #ef4444)', flexShrink: 0 }} />;
       case 'payment_submitted':
-        return <CreditCard size={18} style={{ color: 'var(--primary-color, #0284c7)', flexShrink: 0 }} />;
       case 'payment_cash':
-        return <Banknote size={18} style={{ color: 'var(--success-color, #10b981)', flexShrink: 0 }} />;
+        return <CreditCard size={18} style={{ color: 'var(--primary-color, #0284c7)', flexShrink: 0 }} />;
+      case 'admin_new_payment':
+        return <CreditCard size={18} style={{ color: '#0284c7', flexShrink: 0 }} />;
+      case 'admin_new_document':
+      case 'document_submitted':
+        return <FileText size={18} style={{ color: '#d97706', flexShrink: 0 }} />;
       case 'due_h7':
       case 'due_h1':
         return <Clock size={18} style={{ color: 'var(--warning-color, #f59e0b)', flexShrink: 0 }} />;
@@ -153,6 +188,25 @@ export default function NotificationBell() {
         return <AlertTriangle size={18} style={{ color: 'var(--danger-color, #ef4444)', flexShrink: 0 }} />;
       default:
         return <Bell size={18} style={{ color: 'var(--text-muted, #64748b)', flexShrink: 0 }} />;
+    }
+  };
+
+  const handleItemClick = (item) => {
+    handleMarkAsRead(item.id, item.is_read);
+    setIsOpen(false);
+
+    if (role === 'admin') {
+      if (item.type === 'admin_new_payment' || item.type === 'payment_submitted') {
+        navigate('/admin/pembayaran/verifikasi');
+      } else if (item.type === 'admin_new_document' || item.type === 'document_submitted') {
+        navigate('/admin/dokumen');
+      }
+    } else if (role === 'jamaah') {
+      if (item.type?.startsWith('payment') || item.type?.startsWith('due') || item.type === 'overdue') {
+        navigate('/jamaah/pembayaran');
+      } else if (item.type?.startsWith('document')) {
+        navigate('/jamaah/dokumen');
+      }
     }
   };
 
@@ -190,7 +244,8 @@ export default function NotificationBell() {
           justifyContent: 'center',
           background: isOpen ? 'var(--bg-subtle, #f1f5f9)' : 'transparent',
           border: '1px solid var(--border-color, #e2e8f0)',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          overflow: 'visible'
         }}
         title="Notifikasi"
         aria-label="Buka notifikasi"
@@ -200,18 +255,24 @@ export default function NotificationBell() {
           <span
             style={{
               position: 'absolute',
-              top: '-4px',
-              right: '-4px',
-              backgroundColor: '#ef4444',
+              top: '-6px',
+              right: '-6px',
+              backgroundColor: '#dc2626',
               color: '#ffffff',
-              fontSize: '0.68rem',
-              fontWeight: 700,
-              padding: '1px 5px',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              minWidth: '20px',
+              height: '20px',
+              padding: '0 5px',
               borderRadius: '9999px',
-              minWidth: '18px',
-              textAlign: 'center',
-              lineHeight: 1.3,
-              boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 1,
+              border: '2px solid #ffffff',
+              boxShadow: '0 2px 6px rgba(220, 38, 38, 0.45)',
+              zIndex: 10,
+              pointerEvents: 'none'
             }}
           >
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -335,7 +396,7 @@ export default function NotificationBell() {
               notifications.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() => handleMarkAsRead(item.id, item.is_read)}
+                  onClick={() => handleItemClick(item)}
                   style={{
                     padding: '12px 16px',
                     borderBottom: '1px solid var(--border-color, #f1f5f9)',
@@ -343,7 +404,7 @@ export default function NotificationBell() {
                     gap: '12px',
                     alignItems: 'flex-start',
                     backgroundColor: item.is_read ? 'transparent' : 'rgba(2, 132, 199, 0.04)',
-                    cursor: item.is_read ? 'default' : 'pointer',
+                    cursor: 'pointer',
                     transition: 'background-color 0.15s ease'
                   }}
                 >

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import StatCard from '../../components/StatCard';
 import PaymentStatusBadge from '../../components/PaymentStatusBadge';
-import { CreditCard, Send, CheckCircle, Clock } from 'lucide-react';
+import { CreditCard, Send, CheckCircle, Clock, Calendar, ArrowUpRight, AlertTriangle } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
@@ -130,51 +130,117 @@ export default function JamaahPembayaran() {
         />
       </div>
 
-      {/* Riwayat Pembayaran */}
+      {/* Rencana Jadwal Termin Cicilan */}
       <div className="card" style={{ marginBottom: '24px' }}>
-        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h3 style={{ fontSize: '1.1rem' }}>Rencana Jadwal Termin Cicilan</h3>
+            <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calendar size={18} className="text-primary" />
+              Rencana Jadwal Termin Cicilan
+            </h3>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Pemantauan progress pelunasan bertahap (Termin) sesuai ketentuan travel.
+              Pemantauan progres pelunasan bertahap (termin) sesuai kesepakatan paket ibadah Anda.
             </p>
           </div>
+          {terms.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {terms.some(t => t.status === 'overdue') && (
+                <span className="status-badge rejected" style={{ fontSize: '0.75rem' }}>
+                  <AlertTriangle size={13} />
+                  Perlu Perhatian: Termin Terlambat
+                </span>
+              )}
+              <span className="status-badge neutral" style={{ fontSize: '0.75rem' }}>
+                {terms.filter(t => t.status === 'paid').length} dari {terms.length} Termin Lunas
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Termin #</th>
-                <th>Judul / Keterangan</th>
+                <th style={{ width: '90px' }}>Termin</th>
+                <th>Keterangan</th>
                 <th>Jatuh Tempo</th>
-                <th>Target Nominal</th>
-                <th>Status</th>
+                <th style={{ textAlign: 'right' }}>Target Tagihan</th>
+                <th style={{ textAlign: 'right' }}>Terbayar Sah</th>
+                <th style={{ textAlign: 'right' }}>Sisa Termin</th>
+                <th style={{ textAlign: 'center' }}>Status</th>
+                <th style={{ textAlign: 'center', width: '100px' }}>Aksi</th>
               </tr>
             </thead>
             <tbody>
               {terms.length === 0 ? (
-                <tr><td colSpan="5" style={{ textAlign: 'center' }}>Belum ada jadwal termin cicilan.</td></tr>
+                <tr>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                    Belum ada jadwal termin cicilan yang ditetapkan oleh pihak travel untuk akun Anda.
+                  </td>
+                </tr>
               ) : (
-                terms.map((term) => (
-                  <tr key={term.id}>
-                    <td style={{ fontWeight: 700 }}>Termin #{term.term_number}</td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{term.title}</div>
-                      {term.notes && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{term.notes}</div>}
-                    </td>
-                    <td>{term.due_date}</td>
-                    <td style={{ fontWeight: 700 }}>Rp {Number(term.amount || term.target_amount || 0).toLocaleString('id-ID')}</td>
-                    <td>
-                      <span className={`badge ${
-                        term.status === 'paid' ? 'badge-success' :
-                        term.status === 'overdue' ? 'badge-danger' : 'badge-warning'
-                      }`} style={{ textTransform: 'uppercase', fontSize: '0.7rem', padding: '4px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                        {term.status === 'paid' ? 'Lunas' : term.status === 'overdue' ? 'Terlambat' : 'Belum Lunas'}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                terms.map((term) => {
+                  const targetNominal = Number(term.target_amount ?? term.amount ?? 0);
+                  const verifiedNominal = Number(term.verified_amount ?? 0);
+                  const remainingNominal = Number(term.remaining_amount ?? Math.max(0, targetNominal - verifiedNominal));
+                  const isPaid = term.status === 'paid' || remainingNominal <= 0;
+
+                  return (
+                    <tr key={term.id || term.term_id || term.term_number}>
+                      <td style={{ fontWeight: 700 }}>
+                        Termin #{term.term_number}
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{term.title || `Cicilan Tahap ${term.term_number}`}</div>
+                        {term.notes && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {term.notes}
+                          </div>
+                        )}
+                        {Number(term.pending_amount || 0) > 0 && (
+                          <div style={{ fontSize: '0.72rem', color: '#d97706', marginTop: '2px' }}>
+                            (Ada Rp {Number(term.pending_amount).toLocaleString('id-ID')} sedang diverifikasi)
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {term.due_date ? new Date(term.due_date).toLocaleDateString('id-ID', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                        Rp {targetNominal.toLocaleString('id-ID')}
+                      </td>
+                      <td style={{ textAlign: 'right', color: verifiedNominal > 0 ? 'var(--success-color)' : 'var(--text-muted)', fontWeight: 600 }}>
+                        Rp {verifiedNominal.toLocaleString('id-ID')}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: remainingNominal > 0 ? 'var(--text-main)' : 'var(--text-muted)' }}>
+                        Rp {remainingNominal.toLocaleString('id-ID')}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <PaymentStatusBadge status={term.status} />
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {isPaid ? (
+                          <span style={{ fontSize: '0.78rem', color: 'var(--success-color)', fontWeight: 600 }}>
+                            ✓ Lunas
+                          </span>
+                        ) : (
+                          <Link
+                            to={`/jamaah/pembayaran/ajukan?termin=${term.term_number}&nominal=${remainingNominal}`}
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '4px 10px', fontSize: '0.75rem', textDecoration: 'none' }}
+                          >
+                            <span>Bayar</span>
+                            <ArrowUpRight size={12} />
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -10,18 +10,22 @@ export default function PaymentStatusBadge({ status, textOverride }) {
   let icon = null;
   let label = textOverride || status;
 
-  if (normalized === 'verified' || normalized === 'terverifikasi' || normalized === 'lunas' || normalized === 'lengkap') {
+  if (normalized === 'verified' || normalized === 'terverifikasi' || normalized === 'lunas' || normalized === 'lengkap' || normalized === 'paid') {
     className = 'status-badge verified';
     icon = <CheckCircle2 size={13} />;
-    label = textOverride || (normalized === 'verified' ? 'Terverifikasi' : status);
+    label = textOverride || (normalized === 'verified' ? 'Terverifikasi' : normalized === 'paid' ? 'Lunas' : status);
   } else if (normalized === 'pending' || normalized === 'menunggu verifikasi' || normalized === 'cicilan' || normalized === 'hampir lengkap') {
     className = 'status-badge pending';
     icon = <Clock size={13} />;
     label = textOverride || (normalized === 'pending' ? 'Menunggu Verifikasi' : status);
-  } else if (normalized === 'rejected' || normalized === 'ditolak' || normalized === 'belum bayar') {
+  } else if (normalized === 'rejected' || normalized === 'ditolak' || normalized === 'belum bayar' || normalized === 'overdue') {
     className = 'status-badge rejected';
     icon = <XCircle size={13} />;
-    label = textOverride || (normalized === 'rejected' ? 'Ditolak' : status);
+    label = textOverride || (normalized === 'rejected' ? 'Ditolak' : normalized === 'overdue' ? 'Jatuh Tempo Lewat' : status);
+  } else if (normalized === 'unpaid') {
+    className = 'status-badge neutral';
+    icon = <Clock size={13} />;
+    label = textOverride || 'Belum Bayar';
   } else {
     className = 'status-badge neutral';
     icon = <AlertCircle size={13} />;
