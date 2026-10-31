@@ -34,15 +34,6 @@ function mapPayment(p) {
 }
 
 async function getJamaahBilling(jamaahId) {
-  if (typeof jamaahId === 'string' && jamaahId.startsWith('demo-')) {
-    return {
-      jamaah_id: jamaahId,
-      sisa_tagihan: 35000000,
-      total_terbayar: 5000000,
-      package_price: 40000000
-    };
-  }
-
   const { data, error } = await supabase
     .from('v_jamaah_billing_summary')
     .select('*')
@@ -243,26 +234,17 @@ export const paymentService = {
   },
 
   submitTransfer: async (payload) => {
-    const jamaah = await getJamaahBilling(payload.jamaah_id);
-    const nominalNum = Number(payload.nominal ?? payload.amount ?? 0);
-    const sisa = Number(jamaah?.sisa_tagihan ?? 0);
-    const jenis = payload.jenis ?? payload.payment_type ?? 'installment';
-
-    if (jenis === 'full' && sisa > 0 && nominalNum !== sisa) {
-      throw new Error(`Bayar penuh harus sama persis dengan sisa tagihan (Rp ${sisa.toLocaleString('id-ID')}).`);
-    }
-
-    if (nominalNum <= 0 || (sisa > 0 && nominalNum > sisa)) {
-      throw new Error(
-        `Nominal tidak valid. Sisa tagihan: Rp ${sisa.toLocaleString('id-ID')}`
-      );
-    }
-
-    const tgl = payload.tanggal ?? payload.payment_date;
-    const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
-
-    // Penanganan khusus demo mode
+    // 1. Penanganan khusus demo mode: langsung proses tanpa memanggil database billing
     if (typeof payload.jamaah_id === 'string' && payload.jamaah_id.startsWith('demo-')) {
+      const nominalNum = Number(payload.nominal ?? payload.amount ?? 0);
+      const jenis = payload.jenis ?? payload.payment_type ?? 'installment';
+
+      if (nominalNum <= 0) {
+        throw new Error('Nominal tidak valid.');
+      }
+
+      const tgl = payload.tanggal ?? payload.payment_date;
+      const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
       const demoId = `demo-pay-${Date.now()}`;
       const demoRecord = {
         id: demoId,
@@ -311,6 +293,25 @@ export const paymentService = {
 
       return mapPayment(demoRecord);
     }
+
+    // 2. Alur Produksi Akun Nyata: validasi saldo tagihan via view v_jamaah_billing_summary
+    const jamaah = await getJamaahBilling(payload.jamaah_id);
+    const nominalNum = Number(payload.nominal ?? payload.amount ?? 0);
+    const sisa = Number(jamaah?.sisa_tagihan ?? 0);
+    const jenis = payload.jenis ?? payload.payment_type ?? 'installment';
+
+    if (jenis === 'full' && sisa > 0 && nominalNum !== sisa) {
+      throw new Error(`Bayar penuh harus sama persis dengan sisa tagihan (Rp ${sisa.toLocaleString('id-ID')}).`);
+    }
+
+    if (nominalNum <= 0 || (sisa > 0 && nominalNum > sisa)) {
+      throw new Error(
+        `Nominal tidak valid. Sisa tagihan: Rp ${sisa.toLocaleString('id-ID')}`
+      );
+    }
+
+    const tgl = payload.tanggal ?? payload.payment_date;
+    const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
 
     const proofFile = payload.bukti_file ?? payload.file;
     const proofPath = await uploadPaymentProof(

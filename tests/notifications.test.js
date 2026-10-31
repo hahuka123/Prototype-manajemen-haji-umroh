@@ -420,6 +420,23 @@ describe('Model Data & Layanan Notifikasi In-App (Haji & Umrah)', () => {
       assert.match(rejectedNotif.title, /Dokumen Perlu Perbaikan/);
       assert.match(rejectedNotif.message, /Foto terpotong/);
     });
+
+    it('8.4 Transisi dokumen dari Ditolak langsung ke Lengkap: Jamaah menerima notifikasi document_verified', async () => {
+      // Admin menyetujui dokumen yang sebelumnya ditolak
+      const approveResult = await documentService.verifyDocument(
+        demoJamaahUuid,
+        'foto',
+        'Lengkap',
+        'Dokumen disetujui setelah klarifikasi fisik di kantor biro.'
+      );
+      assert.ok(approveResult);
+      assert.equal(approveResult.status, 'Lengkap');
+
+      const jamaahNotifs = await notificationService.getNotifications(demoJamaahProfileId);
+      const verifiedNotif = jamaahNotifs.find(n => n.type === 'document_verified');
+      assert.ok(verifiedNotif, 'Notifikasi document_verified wajib dikirim saat dokumen ditandai Lengkap');
+      assert.match(verifiedNotif.title, /Dokumen Diverifikasi/);
+    });
   });
 
   describe('9. Pengamanan notify_admins() & Kontrol Hak Akses', () => {
@@ -572,11 +589,11 @@ describe('Model Data & Layanan Notifikasi In-App (Haji & Umrah)', () => {
       assert.ok(fs.existsSync(migrationFilePath), 'File migrasi 20261030100000 wajib ada di supabase/migrations');
     });
 
-    it('11.2 Skrip migrasi memuat penghapusan dinamis check constraint lama pada kolom type', () => {
+    it('11.2 Skrip migrasi memuat penghapusan dinamis check constraint lama spesifik pada kolom type berbasis nomor atribut (attnum)', () => {
       const sql = fs.readFileSync(migrationFilePath, 'utf8');
-      assert.match(sql, /pg_constraint con/);
-      assert.match(sql, /relname = 'notifications'/);
-      assert.match(sql, /pg_get_constraintdef\(con\.oid\) LIKE '%type%'/);
+      assert.match(sql, /pg_attribute att/);
+      assert.match(sql, /att\.attname = 'type'/);
+      assert.match(sql, /con\.conkey = ARRAY\[v_attnum\]/);
       assert.match(sql, /ALTER TABLE public\.notifications DROP CONSTRAINT IF EXISTS/);
     });
 
@@ -620,10 +637,10 @@ describe('Model Data & Layanan Notifikasi In-App (Haji & Umrah)', () => {
       assert.match(sql, /GRANT EXECUTE ON FUNCTION public\.notify_admins.*TO service_role;/);
     });
 
-    it('11.7 Trigger dokumen trg_handle_document_notification dilengkapi blok EXCEPTION non-fatal', () => {
+    it('11.7 Trigger dokumen trg_handle_document_notification dilengkapi blok EXCEPTION non-fatal terstruktur', () => {
       const sql = fs.readFileSync(migrationFilePath, 'utf8');
       assert.match(sql, /EXCEPTION\s+WHEN OTHERS THEN/);
-      assert.match(sql, /RAISE WARNING 'trg_handle_document_notification non-fatal error: %', SQLERRM;/);
+      assert.match(sql, /RAISE WARNING 'trg_handle_document_notification failure: \[doc_id: %, op: %, sqlstate: %, sqlerrm: %\]'/);
     });
   });
 });

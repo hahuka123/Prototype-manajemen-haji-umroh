@@ -5,39 +5,54 @@
 -- Tujuan:
 -- 1. Menjamin seluruh tipe notifikasi yang digunakan oleh frontend, service, trigger, dan migrasi
 --    diizinkan oleh CHECK constraint tabel public.notifications secara aditif dan aman.
--- 2. Menghapus check constraint lama pada kolom type secara dinamis agar tidak gagal jika
---    nama constraint bervariasi pada database yang sudah berjalan.
+-- 2. Menghapus check constraint lama HANYA pada kolom 'type' secara dinamis berbasis nomor atribut
+--    (attnum) spesifik agar tidak menghapus constraint kolom lain atau gagal pada staging.
 -- 3. Memperketat keamanan fungsi public.notify_admins():
 --    - Memvalidasi identitas pemanggil menggunakan public.is_admin().
 --    - Menolak pemanggil anon dan pengguna authenticated yang bukan Admin (misal Jamaah).
 --    - Mencabut hak eksekusi dari PUBLIC dan anon.
 --    - Memberikan hak eksekusi hanya kepada authenticated dan service_role.
--- 4. Memastikan trigger trg_handle_document_notification memiliki proteksi exception handling
---    sehingga tidak pernah menggagalkan operasi upload atau verifikasi dokumen yang valid.
+-- 4. Memastikan trigger trg_handle_document_notification:
+--    - Mendukung transisi status dokumen yang sah ('Menunggu Verifikasi' -> 'Lengkap', 'Ditolak' -> 'Lengkap').
+--    - Memiliki penanganan exception non-fatal terstruktur yang mencatat ke log server PostgreSQL
+--      tanpa membocorkan PII dan tidak menggagalkan upload atau verifikasi dokumen valid.
 --
 -- Catatan Keamanan:
 -- - Bersifat ADITIF: Tidak menghapus tabel, kolom, maupun data notifikasi yang sudah ada.
 -- - Idempoten: Aman dijalankan berulang kali tanpa merusak integritas database.
 -- ========================================================
 
--- 1. Pembaruan CHECK Constraint Tipe Notifikasi secara Aman dan Dinamis
+-- 1. Pembaruan CHECK Constraint Tipe Notifikasi secara Spesifik Berbasis Atribut Kolom
 DO $$
 DECLARE
     r RECORD;
+    v_attnum INT2;
 BEGIN
-    -- Cari dan hapus semua check constraint lama pada kolom 'type' di tabel 'notifications'
-    FOR r IN (
-        SELECT con.conname
-        FROM pg_constraint con
-        JOIN pg_class rel ON rel.oid = con.conrelid
-        JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-        WHERE nsp.nspname = 'public'
-          AND rel.relname = 'notifications'
-          AND con.contype = 'c'
-          AND pg_get_constraintdef(con.oid) LIKE '%type%'
-    ) LOOP
-        EXECUTE 'ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
-    END LOOP;
+    -- Dapatkan nomor atribut (attnum) spesifik untuk kolom 'type' pada tabel 'notifications'
+    SELECT att.attnum INTO v_attnum
+    FROM pg_attribute att
+    JOIN pg_class rel ON rel.oid = att.attrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE nsp.nspname = 'public'
+      AND rel.relname = 'notifications'
+      AND att.attname = 'type'
+      AND NOT att.attisdropped;
+
+    IF v_attnum IS NOT NULL THEN
+        -- Cari dan hapus HANYA check constraint (contype = 'c') yang secara spesifik mengikat kolom 'type'
+        FOR r IN (
+            SELECT con.conname
+            FROM pg_constraint con
+            JOIN pg_class rel ON rel.oid = con.conrelid
+            JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+            WHERE nsp.nspname = 'public'
+              AND rel.relname = 'notifications'
+              AND con.contype = 'c'
+              AND con.conkey = ARRAY[v_attnum]
+        ) LOOP
+            EXECUTE 'ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname);
+        END LOOP;
+    END IF;
 END $$;
 
 ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
@@ -144,7 +159,7 @@ REVOKE ALL ON FUNCTION public.notify_admins(VARCHAR, VARCHAR, TEXT, UUID, UUID, 
 GRANT EXECUTE ON FUNCTION public.notify_admins(VARCHAR, VARCHAR, TEXT, UUID, UUID, VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.notify_admins(VARCHAR, VARCHAR, TEXT, UUID, UUID, VARCHAR) TO service_role;
 
--- 3. Pembaruan Trigger Notifikasi Dokumen dengan Perlindungan Kesalahan (Fail-Safe)
+-- 3. Pembaruan Trigger Notifikasi Dokumen dengan Perlindungan Kesalahan (Fail-Safe) & Transisi Lengkap
 CREATE OR REPLACE FUNCTION public.trg_handle_document_notification()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -203,8 +218,8 @@ BEGIN
             END LOOP;
         END IF;
 
-        -- ALUR 2: Admin menyetujui dokumen ('Lengkap') -> Beritahu Jamaah
-        IF TG_OP = 'UPDATE' AND v_profile_id IS NOT NULL AND OLD.status = 'Menunggu Verifikasi' AND NEW.status = 'Lengkap' THEN
+        -- ALUR 2: Admin menyetujui dokumen ('Lengkap') dari status belum lengkap ('Menunggu Verifikasi' atau 'Ditolak') -> Beritahu Jamaah
+        IF TG_OP = 'UPDATE' AND v_profile_id IS NOT NULL AND OLD.status IS DISTINCT FROM 'Lengkap' AND NEW.status = 'Lengkap' THEN
             INSERT INTO public.notifications (
                 profile_id,
                 jamaah_id,
@@ -222,8 +237,8 @@ BEGIN
             ) ON CONFLICT (dedup_key) DO NOTHING;
         END IF;
 
-        -- ALUR 3: Admin menolak dokumen ('Ditolak') -> Beritahu Jamaah
-        IF TG_OP = 'UPDATE' AND v_profile_id IS NOT NULL AND OLD.status = 'Menunggu Verifikasi' AND NEW.status = 'Ditolak' THEN
+        -- ALUR 3: Admin menolak dokumen ('Ditolak') dari status selain ditolak -> Beritahu Jamaah
+        IF TG_OP = 'UPDATE' AND v_profile_id IS NOT NULL AND OLD.status IS DISTINCT FROM 'Ditolak' AND NEW.status = 'Ditolak' THEN
             INSERT INTO public.notifications (
                 profile_id,
                 jamaah_id,
@@ -243,8 +258,10 @@ BEGIN
 
     EXCEPTION
         WHEN OTHERS THEN
-            -- Jangan menggagalkan operasi upload atau verifikasi dokumen jika terjadi galat notifikasi non-kritis
-            RAISE WARNING 'trg_handle_document_notification non-fatal error: %', SQLERRM;
+            -- Pencatatan kegagalan terstruktur ke log PostgreSQL tanpa mengekspos PII
+            -- Memastikan tidak pernah menggagalkan operasi upload atau verifikasi dokumen valid
+            RAISE WARNING 'trg_handle_document_notification failure: [doc_id: %, op: %, sqlstate: %, sqlerrm: %]',
+                NEW.id, TG_OP, SQLSTATE, SQLERRM;
     END;
 
     RETURN NEW;
@@ -260,4 +277,3 @@ EXECUTE FUNCTION public.trg_handle_document_notification();
 
 -- Komentar dokumentasi
 COMMENT ON FUNCTION public.notify_admins IS 'RPC aman dengan validasi admin untuk mengirim notifikasi in-app ke seluruh administrator.';
-
