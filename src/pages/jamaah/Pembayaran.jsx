@@ -229,7 +229,7 @@ export default function JamaahPembayaran() {
                           </span>
                         ) : (
                           <Link
-                            to={`/jamaah/pembayaran/ajukan?termin=${term.term_number}&nominal=${remainingNominal}`}
+                            to={`/jamaah/pembayaran/ajukan?term_id=${term.id || term.term_id}&termin=${term.term_number}&nominal=${remainingNominal}`}
                             className="btn btn-secondary btn-sm"
                             style={{ padding: '4px 10px', fontSize: '0.75rem', textDecoration: 'none' }}
                           >

@@ -4,6 +4,7 @@ import { Banknote, CheckCircle, Info } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
 import { packageService } from '../../services/packageService';
+import { installmentService } from '../../services/installmentService';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function AdminCatatPembayaranCash() {
@@ -16,6 +17,10 @@ export default function AdminCatatPembayaranCash() {
   const [loading, setLoading] = useState(true);
 
   const [selectedJamaahId, setSelectedJamaahId] = useState('');
+  const [terms, setTerms] = useState([]);
+  const [selectedTermId, setSelectedTermId] = useState('');
+  const [loadingTerms, setLoadingTerms] = useState(false);
+
   const [paymentType, setPaymentType] = useState('installment'); // full | installment
   const [nominal, setNominal] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -44,6 +49,32 @@ export default function AdminCatatPembayaranCash() {
       fetchData();
   }, []);
 
+  useEffect(() => {
+    if (!selectedJamaahId) {
+      setTerms([]);
+      setSelectedTermId('');
+      return;
+    }
+    let isMounted = true;
+    const fetchTerms = async () => {
+      try {
+        setLoadingTerms(true);
+        const tData = await installmentService.getTermsByJamaah(selectedJamaahId);
+        if (isMounted) {
+          setTerms(tData || []);
+          setSelectedTermId('');
+        }
+      } catch (err) {
+        console.warn('Gagal memuat termin jamaah:', err);
+        if (isMounted) setTerms([]);
+      } finally {
+        if (isMounted) setLoadingTerms(false);
+      }
+    };
+    fetchTerms();
+    return () => { isMounted = false; };
+  }, [selectedJamaahId]);
+
   const selectedJamaah = jamaahList.find(j => String(j.id) === selectedJamaahId);
   const sisaTagihan = selectedJamaah ? selectedJamaah.sisa_tagihan : 0;
 
@@ -51,6 +82,7 @@ export default function AdminCatatPembayaranCash() {
     setPaymentType(type);
     if (type === 'full') {
       setNominal(String(sisaTagihan));
+      setSelectedTermId('');
     } else {
       setNominal('');
     }
@@ -69,6 +101,7 @@ export default function AdminCatatPembayaranCash() {
         const adminId = user?.id || null;
         await paymentService.submitCash({
             jamaah_id: selectedJamaahId,
+            installment_term_id: paymentType === 'installment' && selectedTermId ? selectedTermId : null,
             jenis: paymentType,
             nominal: num,
             catatan: notes,
@@ -175,6 +208,40 @@ export default function AdminCatatPembayaranCash() {
                 </label>
               </div>
             </div>
+
+            {paymentType === 'installment' && (
+              <div className="form-group">
+                <label className="form-label">Alokasi Termin Cicilan (Opsional)</label>
+                <select
+                  className="form-select"
+                  value={selectedTermId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedTermId(val);
+                    if (val) {
+                      const t = terms.find(item => (item.id === val || item.term_id === val));
+                      if (t && Number(t.remaining_amount) > 0) {
+                        setNominal(String(Math.min(Number(t.remaining_amount), sisaTagihan)));
+                        setNotes(`Pembayaran tunai Termin #${t.term_number}: ${t.title}`);
+                      }
+                    }
+                  }}
+                  disabled={loadingTerms || sisaTagihan === 0}
+                >
+                  <option value="">-- Pembayaran Bebas (Tanpa Alokasi Termin) --</option>
+                  {terms.map((t) => (
+                    <option key={t.id || t.term_id} value={t.id || t.term_id}>
+                      Termin #{t.term_number}: {t.title} (Sisa: Rp {Number(t.remaining_amount || 0).toLocaleString('id-ID')} • Status: {t.status})
+                    </option>
+                  ))}
+                </select>
+                {terms.length === 0 && !loadingTerms && (
+                  <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>
+                    Jamaah ini belum memiliki jadwal termin cicilan. Pembayaran akan dicatat sebagai cicilan umum.
+                  </small>
+                )}
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">

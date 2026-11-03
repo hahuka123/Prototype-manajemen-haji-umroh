@@ -3,20 +3,24 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Upload, Send, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { paymentService } from '../../services/paymentService';
 import { jamaahService } from '../../services/jamaahService';
+import { installmentService } from '../../services/installmentService';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function JamaahAjukanPembayaran() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const paramTermId = searchParams.get('term_id');
   const paramTermin = searchParams.get('termin');
   const paramNominal = searchParams.get('nominal');
   const { user, profile } = useAuth();
 
   const [sisaTagihan, setSisaTagihan] = useState(0);
   const [jamaah, setJamaah] = useState(null);
+  const [selectedTerm, setSelectedTerm] = useState(null);
+  const [termId, setTermId] = useState(paramTermId || null);
   const [loading, setLoading] = useState(true);
 
-  const [paymentType, setPaymentType] = useState(paramNominal ? 'installment' : 'installment'); // 'full' | 'installment'
+  const [paymentType, setPaymentType] = useState(paramNominal || paramTermId ? 'installment' : 'installment'); // 'full' | 'installment'
   const [amount, setAmount] = useState('');
   const [bankName, setBankName] = useState('Bank Syariah Indonesia (BSI)');
   const [refNumber, setRefNumber] = useState('');
@@ -39,7 +43,33 @@ export default function JamaahAjukanPembayaran() {
         if (j) {
           const sisa = Number(j.sisa_tagihan || 0);
           setSisaTagihan(sisa);
-          if (paramNominal) {
+
+          if (paramTermId) {
+            setPaymentType('installment');
+            try {
+              const t = await installmentService.getTermById(paramTermId);
+              if (t) {
+                if (t.jamaah_id !== j.id) {
+                  setErrorMsg('Termin cicilan tidak sesuai dengan data akun Anda.');
+                  setTermId(null);
+                  setSelectedTerm(null);
+                } else {
+                  setSelectedTerm(t);
+                  setTermId(t.id || t.term_id);
+                  const effectiveRemaining = Math.max(
+                    0,
+                    Number(t.target_amount || 0) - (Number(t.verified_amount || 0) + Number(t.pending_amount || 0))
+                  );
+                  const remaining = Number(t.remaining_amount || 0);
+                  const targetNom = Math.min(effectiveRemaining > 0 ? effectiveRemaining : remaining, sisa);
+                  setAmount(String(targetNom));
+                  setNotes(`Pembayaran Termin #${t.term_number}: ${t.title}`);
+                }
+              }
+            } catch (tErr) {
+              console.warn('[AjukanPembayaran] Gagal memuat data termin:', tErr);
+            }
+          } else if (paramNominal) {
             setPaymentType('installment');
             const targetNom = Math.min(Number(paramNominal), sisa);
             setAmount(String(targetNom));
@@ -58,13 +88,18 @@ export default function JamaahAjukanPembayaran() {
       }
     };
     fetchData();
-  }, [profile?.id, paramNominal, paramTermin]);
+  }, [profile?.id, paramTermId, paramNominal, paramTermin]);
 
   function handleTypeChange(type) {
     setPaymentType(type);
     setErrorMsg('');
     if (type === 'full') {
       setAmount(String(sisaTagihan));
+      setTermId(null);
+    } else if (selectedTerm) {
+      setTermId(selectedTerm.id || selectedTerm.term_id);
+      const remaining = Number(selectedTerm.remaining_amount || 0);
+      setAmount(String(Math.min(remaining, sisaTagihan)));
     }
   }
 
@@ -113,6 +148,7 @@ export default function JamaahAjukanPembayaran() {
       setErrorMsg('');
       await paymentService.submitTransfer({
         jamaah_id: jamaah.id,
+        installment_term_id: paymentType === 'full' ? null : (termId || null),
         jenis: paymentType,
         nominal: num,
         bank_asal: bankName,
@@ -183,7 +219,29 @@ export default function JamaahAjukanPembayaran() {
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            {paramTermin && (
+            {selectedTerm ? (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '12px 14px',
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: 'var(--radius-md)',
+                color: '#1e40af',
+                fontSize: '0.85rem',
+                marginBottom: '18px'
+              }}>
+                <Info size={18} />
+                <div>
+                  <div>Alokasi: <strong>Termin #{selectedTerm.term_number}: {selectedTerm.title}</strong></div>
+                  <div style={{ fontSize: '0.78rem', marginTop: '2px', color: '#1d4ed8' }}>
+                    Target: Rp {Number(selectedTerm.target_amount).toLocaleString('id-ID')} • Sisa Termin: Rp {Number(selectedTerm.remaining_amount).toLocaleString('id-ID')}
+                    {Number(selectedTerm.pending_amount || 0) > 0 && ` (Ada Rp ${Number(selectedTerm.pending_amount).toLocaleString('id-ID')} menunggu verifikasi)`}
+                  </div>
+                </div>
+              </div>
+            ) : paramTermin ? (
               <div style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -201,7 +259,7 @@ export default function JamaahAjukanPembayaran() {
                   Pengajuan ini disesuaikan untuk pembayaran <strong>Termin #{paramTermin}</strong>. Nominal otomatis diisi sesuai sisa kewajiban termin Anda.
                 </span>
               </div>
-            )}
+            ) : null}
 
             {errorMsg && (
               <div style={{

@@ -8,6 +8,7 @@ function mapPayment(p) {
   return {
     id: p.id,
     jamaah_id: p.jamaah_id,
+    installment_term_id: p.installment_term_id || null,
     payment_method: p.payment_method,
     metode: p.payment_method,
     payment_type: p.payment_type,
@@ -42,6 +43,41 @@ async function getJamaahBilling(jamaahId) {
 
   if (error) throw error;
   return data;
+}
+
+export async function validateTermPaymentEligibility(jamaahId, termId, amount) {
+  if (!termId) return true;
+
+  // Cek pada view v_installment_terms_summary
+  const { data: term, error } = await supabase
+    .from('v_installment_terms_summary')
+    .select('*')
+    .eq('term_id', termId)
+    .maybeSingle();
+
+  if (error || !term) {
+    throw new Error('Jadwal termin cicilan tidak ditemukan.');
+  }
+
+  // 1. Validasi Kepemilikan (Anti Cross-Jamaah)
+  if (term.jamaah_id !== jamaahId) {
+    throw new Error('Termin cicilan tidak sesuai dengan identitas jamaah.');
+  }
+
+  // 2. Validasi Batas Nominal Efektif (Memperhitungkan pending_amount)
+  const target = Number(term.target_amount || term.amount || 0);
+  const verified = Number(term.verified_amount || 0);
+  const pending = Number(term.pending_amount || 0);
+  const effectiveRemaining = Math.max(0, target - (verified + pending));
+
+  if (amount > effectiveRemaining) {
+    throw new Error(
+      `Nominal pembayaran (Rp ${amount.toLocaleString('id-ID')}) melebihi sisa kuota termin ` +
+      `(Sisa kuota tersedia: Rp ${effectiveRemaining.toLocaleString('id-ID')}).`
+    );
+  }
+
+  return true;
 }
 
 async function uploadPaymentProof(file, jamaahId) {
@@ -234,6 +270,8 @@ export const paymentService = {
   },
 
   submitTransfer: async (payload) => {
+    const installmentTermId = payload.installment_term_id || null;
+
     // 1. Penanganan khusus demo mode: langsung proses tanpa memanggil database billing
     if (typeof payload.jamaah_id === 'string' && payload.jamaah_id.startsWith('demo-')) {
       const nominalNum = Number(payload.nominal ?? payload.amount ?? 0);
@@ -249,6 +287,7 @@ export const paymentService = {
       const demoRecord = {
         id: demoId,
         jamaah_id: payload.jamaah_id,
+        installment_term_id: installmentTermId,
         payment_method: 'transfer',
         metode: 'transfer',
         payment_type: jenis,
@@ -310,6 +349,11 @@ export const paymentService = {
       );
     }
 
+    // Validasi awal termin cicilan jika dialokasikan ke termin tertentu
+    if (installmentTermId) {
+      await validateTermPaymentEligibility(payload.jamaah_id, installmentTermId, nominalNum);
+    }
+
     const tgl = payload.tanggal ?? payload.payment_date;
     const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
 
@@ -323,6 +367,7 @@ export const paymentService = {
       .from('payments')
       .insert([{
         jamaah_id: payload.jamaah_id,
+        installment_term_id: installmentTermId,
         amount: nominalNum,
         payment_type: jenis,
         payment_method: 'transfer',
@@ -336,9 +381,9 @@ export const paymentService = {
       .single();
 
     if (error) {
-      await supabase.storage.from(PAYMENT_BUCKET).remove([proofPath]);
+      await supabase.storage.from(PAYMENT_BUCKET).remove([proofPath]).catch(() => {});
       console.error('[paymentService] Error submitTransfer:', error.message);
-      throw error;
+      throw new Error(error.message || 'Gagal mengajukan pembayaran transfer.');
     }
 
     const result = mapPayment(data);
@@ -379,6 +424,7 @@ export const paymentService = {
   },
 
   submitCash: async (payload, adminId) => {
+    const installmentTermId = payload.installment_term_id || null;
     const jamaah = await getJamaahBilling(payload.jamaah_id);
     const nominalNum = Number(payload.nominal ?? payload.amount ?? 0);
     const sisa = Number(jamaah?.sisa_tagihan ?? 0);
@@ -394,6 +440,11 @@ export const paymentService = {
       );
     }
 
+    // Validasi awal termin cicilan jika dialokasikan ke termin tertentu
+    if (installmentTermId) {
+      await validateTermPaymentEligibility(payload.jamaah_id, installmentTermId, nominalNum);
+    }
+
     const tgl = payload.tanggal ?? payload.payment_date;
     const paymentDate = tgl ? String(tgl).slice(0, 10) : new Date().toISOString().slice(0, 10);
 
@@ -401,6 +452,7 @@ export const paymentService = {
       .from('payments')
       .insert([{
         jamaah_id: payload.jamaah_id,
+        installment_term_id: installmentTermId,
         amount: nominalNum,
         payment_type: jenis,
         payment_method: 'cash',
@@ -415,7 +467,7 @@ export const paymentService = {
 
     if (error) {
       console.error('[paymentService] Error submitCash:', error.message);
-      throw error;
+      throw new Error(error.message || 'Gagal mencatat pembayaran tunai.');
     }
     return mapPayment(data);
   },
@@ -490,7 +542,7 @@ export const paymentService = {
 
     if (error) {
       console.error('[paymentService] Error verifyTransfer:', error.message);
-      throw error;
+      throw new Error(error.message || 'Gagal memverifikasi pembayaran.');
     }
 
     // Trigger pembaruan real-time ke UI
