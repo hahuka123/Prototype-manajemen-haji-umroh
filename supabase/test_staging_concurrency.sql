@@ -5,7 +5,7 @@
 -- ============================================================================
 -- UUID Khusus Pengujian Konkurensi (Eksplisit & Deterministik):
 -- - Paket Uji:   'c0000000-0000-0000-0000-000000000001'
--- - Jamaah Uji:  'c0000000-0000-0000-0000-000000000002'
+-- - Jamaah Uji:  'c0000000-0000-0000-0000-000000000002' (NIK: Dinamis 16 digit angka numerik)
 -- - Termin Uji:  'c0000000-0000-0000-0000-000000000003' (Target Rp 1.000.000)
 -- - Transaksi A: 'c0000000-0000-0000-0000-000000000004' (Rp 700.000, transfer pending)
 -- - Transaksi B: 'c0000000-0000-0000-0000-000000000005' (Rp 600.000, transfer pending)
@@ -17,22 +17,52 @@
 
 
 -- ============================================================================
--- LANGKAH 1: PERSIAPAN DATA UJI (Jalankan sekali di Tab 1 / Sesi A)
+-- LANGKAH 1: PERSIAPAN DATA UJI DENGAN PROTEKSI BENTURAN (Jalankan di Tab 1)
 -- ============================================================================
--- Bersihkan data lama jika ada, lalu siapkan paket, jamaah, dan termin uji:
-DELETE FROM public.payments WHERE id IN ('c0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000005');
-DELETE FROM public.installment_terms WHERE id = 'c0000000-0000-0000-0000-000000000003';
-DELETE FROM public.jamaah WHERE id = 'c0000000-0000-0000-0000-000000000002';
-DELETE FROM public.packages WHERE id = 'c0000000-0000-0000-0000-000000000001';
+-- PENTING: Script TIDAK melakukan DELETE data secara langsung.
+-- Script memeriksa apakah seluruh UUID pengujian belum digunakan.
+-- NIK dibuat secara dinamis (tepat 16 digit angka 0–9) sehingga tidak
+-- akan bertabrakan dengan data jamaah yang sudah ada di database staging.
+-- Jika ditemukan benturan UUID, script langsung berhenti tanpa mengubah data.
+DO $$
+DECLARE
+    v_pkg_id UUID := 'c0000000-0000-0000-0000-000000000001';
+    v_jamaah_id UUID := 'c0000000-0000-0000-0000-000000000002';
+    v_term_id UUID := 'c0000000-0000-0000-0000-000000000003';
+    v_pay_a_id UUID := 'c0000000-0000-0000-0000-000000000004';
+    v_pay_b_id UUID := 'c0000000-0000-0000-0000-000000000005';
+    v_dynamic_nik VARCHAR(20);
+BEGIN
+    -- 1. Validasi Keamanan (Collision Guard): Pastikan seluruh UUID pengujian belum digunakan di database
+    IF EXISTS (SELECT 1 FROM public.packages WHERE id = v_pkg_id) OR
+       EXISTS (SELECT 1 FROM public.jamaah WHERE id = v_jamaah_id) OR
+       EXISTS (SELECT 1 FROM public.installment_terms WHERE id = v_term_id) OR
+       EXISTS (SELECT 1 FROM public.payments WHERE id IN (v_pay_a_id, v_pay_b_id)) THEN
+        RAISE EXCEPTION 'PENGUJIAN DIBATALKAN: Terdeteksi data dengan UUID pengujian di database. Jika ini sisa dari pengujian sebelumnya, jalankan LANGKAH 5 (Cleanup) terlebih dahulu.';
+    END IF;
 
-INSERT INTO public.packages (id, name, type, price, departure_date, return_date, duration, quota)
-VALUES ('c0000000-0000-0000-0000-000000000001', 'Paket Uji Konkurensi', 'Umrah Reguler', 30000000, CURRENT_DATE + 30, CURRENT_DATE + 42, 12, 50);
+    -- 2. Buat NIK dinamis numerik murni (tepat 16 digit angka 0–9, memenuhi constraint VARCHAR(20))
+    v_dynamic_nik := '9' || pg_catalog.lpad((pg_catalog.floor(pg_catalog.random() * 1000000000000000)::bigint)::text, 15, '0');
 
-INSERT INTO public.jamaah (id, profile_id, nik, birth_date, gender, address, phone, package_id, status)
-VALUES ('c0000000-0000-0000-0000-000000000002', NULL, '3171999999990001', '1995-05-05', 'Laki-laki', 'Jl. Konkurensi No. 12', '081299990001', 'c0000000-0000-0000-0000-000000000001', 'Pendaftaran');
+    -- Pastikan NIK dinamis benar-benar belum terdaftar di database staging
+    WHILE EXISTS (SELECT 1 FROM public.jamaah WHERE nik = v_dynamic_nik) LOOP
+        v_dynamic_nik := '9' || pg_catalog.lpad((pg_catalog.floor(pg_catalog.random() * 1000000000000000)::bigint)::text, 15, '0');
+    END LOOP;
 
-INSERT INTO public.installment_terms (id, jamaah_id, term_number, title, amount, due_date)
-VALUES ('c0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000002', 1, 'Termin Uji Konkurensi', 1000000, CURRENT_DATE + 14);
+    -- 3. Buat Paket Uji
+    INSERT INTO public.packages (id, name, type, price, departure_date, return_date, duration, quota)
+    VALUES (v_pkg_id, 'Paket Uji Konkurensi', 'Umrah Reguler', 30000000, CURRENT_DATE + 30, CURRENT_DATE + 42, 12, 50);
+
+    -- 4. Buat Jamaah Uji (profile_id = NULL)
+    INSERT INTO public.jamaah (id, profile_id, nik, birth_date, gender, address, phone, package_id, status)
+    VALUES (v_jamaah_id, NULL, v_dynamic_nik, '1995-05-05', 'Laki-laki', 'Jl. Konkurensi No. 12', '081299990001', v_pkg_id, 'Pendaftaran');
+
+    -- 5. Buat Termin Uji (Target Rp 1.000.000)
+    INSERT INTO public.installment_terms (id, jamaah_id, term_number, title, amount, due_date)
+    VALUES (v_term_id, v_jamaah_id, 1, 'Termin Uji Konkurensi', 1000000, CURRENT_DATE + 14);
+
+    RAISE NOTICE '[OK] Data dummy pengujian konkurensi aman disiapkan dengan NIK dinamis (%).', v_dynamic_nik;
+END $$;
 
 
 -- ============================================================================
@@ -117,7 +147,8 @@ ROLLBACK;
 -- ============================================================================
 -- LANGKAH 5: PEMBERSIHAN DATA PENGUJIAN / CLEANUP (Jalankan di Tab 1)
 -- ============================================================================
--- Hapus data dummy pengujian berdasarkan ID eksplisit agar staging kembali bersih:
+-- Hapus HANYA 4 record pengujian yang dibuat pada pengujian ini.
+-- Script TIDAK menyentuh data jamaah, paket, atau pembayaran lain.
 DELETE FROM public.payments WHERE id IN ('c0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000005');
 DELETE FROM public.installment_terms WHERE id = 'c0000000-0000-0000-0000-000000000003';
 DELETE FROM public.jamaah WHERE id = 'c0000000-0000-0000-0000-000000000002';

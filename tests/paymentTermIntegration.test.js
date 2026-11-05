@@ -376,7 +376,7 @@ describe('ML Stage 2.5 — Final Fix Validasi Alokasi Pembayaran', () => {
     });
 
     it('2.3 Perhitungan v_available_quota mengurangi total verified dan pending yang sudah ada', () => {
-      assert.match(sqlContent, /v_available_quota\s*:=\s*pg_catalog\.GREATEST\(0,\s*v_target_amount\s*-\s*\(v_existing_verified\s*\+\s*v_existing_pending\)\);/i);
+      assert.match(sqlContent, /v_available_quota\s*:=\s*GREATEST\(0,\s*v_target_amount\s*-\s*\(v_existing_verified\s*\+\s*v_existing_pending\)\);/i);
     });
 
     it('2.4 Menggunakan klausa SELECT ... FOR UPDATE untuk mengunci baris termin secara atomik', () => {
@@ -388,10 +388,14 @@ describe('ML Stage 2.5 — Final Fix Validasi Alokasi Pembayaran', () => {
       assert.match(sqlContent, /SET\s+search_path\s*=\s*''/i);
     });
 
-    it('2.6 Seluruh fungsi bawaan dikualifikasikan secara eksplisit dengan pg_catalog', () => {
-      assert.match(sqlContent, /pg_catalog\.COALESCE/i);
+    it('2.6 Seluruh fungsi bawaan dikualifikasikan secara eksplisit dengan pg_catalog dan konstruksi khusus PostgreSQL benar', () => {
+      // COALESCE dan GREATEST adalah konstruksi SQL khusus dan tidak boleh menggunakan prefix skema di PostgreSQL
+      assert.doesNotMatch(sqlContent, /pg_catalog\.COALESCE/i);
+      assert.doesNotMatch(sqlContent, /pg_catalog\.GREATEST/i);
+      assert.match(sqlContent, /COALESCE/i);
+      assert.match(sqlContent, /GREATEST/i);
+      // Fungsi biasa tetap dikualifikasikan dengan pg_catalog
       assert.match(sqlContent, /pg_catalog\.SUM/i);
-      assert.match(sqlContent, /pg_catalog\.GREATEST/i);
       assert.match(sqlContent, /pg_catalog\.to_char/i);
     });
 

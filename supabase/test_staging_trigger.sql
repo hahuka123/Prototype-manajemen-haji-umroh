@@ -1,5 +1,5 @@
 -- ============================================================================
--- SUITE PENGUJIAN STAGING: TRIGGER INTEGRITAS TERMIN CICILAN (ML STAGE 2.8.1)
+-- SUITE PENGUJIAN STAGING: TRIGGER INTEGRITAS TERMIN CICILAN (ML STAGE 2.9)
 -- File: supabase/test_staging_trigger.sql
 -- Sasaran: public.validate_payment_term_integrity()
 -- ============================================================================
@@ -18,7 +18,7 @@ BEGIN;
 
 DO $$
 DECLARE
-    -- ID Pengujian Dummy (Hanya entitas paket, jamaah, dan termin)
+    -- ID Pengujian Dummy Dinamis (Mencegah Benturan dengan Data Staging yang Sudah Ada)
     -- Catatan: profile_id pada tabel jamaah bersifat nullable, sehingga tidak
     -- memerlukan entitas profiles/auth.users untuk memvalidasi trigger pembayaran.
     v_dummy_pkg_id UUID := gen_random_uuid();
@@ -27,27 +27,33 @@ DECLARE
     v_dummy_term_a UUID := gen_random_uuid();
     v_dummy_term_b UUID := gen_random_uuid();
 
+    -- NIK dan Nomor Telepon Dinamis (Unik 16-digit berbasis UUID untuk anti-tabrakan)
+    v_nik_a VARCHAR(20) := '99' || pg_catalog.substr(pg_catalog.replace(v_dummy_jamaah_a::text, '-', ''), 1, 14);
+    v_nik_b VARCHAR(20) := '98' || pg_catalog.substr(pg_catalog.replace(v_dummy_jamaah_b::text, '-', ''), 1, 14);
+    v_phone_a VARCHAR(20) := '0899' || pg_catalog.substr(pg_catalog.replace(v_dummy_jamaah_a::text, '-', ''), 1, 8);
+    v_phone_b VARCHAR(20) := '0898' || pg_catalog.substr(pg_catalog.replace(v_dummy_jamaah_b::text, '-', ''), 1, 8);
+
     -- Variabel Transaksi Pengujian
     v_pay_id_1 UUID;
     v_pay_id_2 UUID;
     v_err_caught BOOLEAN := false;
 BEGIN
     RAISE NOTICE '============================================================';
-    RAISE NOTICE 'MEMULAI PENGUJIAN TRIGGER INTEGRITAS TERMIN CICILAN (STAGE 2.8.1)';
+    RAISE NOTICE 'MEMULAI PENGUJIAN TRIGGER INTEGRITAS TERMIN CICILAN (STAGE 2.9)';
     RAISE NOTICE '============================================================';
 
     -- 0. PERSIAPAN DATA DUMMY ISOLASI
     -- Insert Paket Dummy
     INSERT INTO public.packages (id, name, type, price, departure_date, return_date, duration, quota)
-    VALUES (v_dummy_pkg_id, 'Paket Uji Staging ML', 'Umrah Reguler', 30000000, CURRENT_DATE + 30, CURRENT_DATE + 42, 12, 45);
+    VALUES (v_dummy_pkg_id, 'Paket Uji Staging ' || pg_catalog.substr(v_dummy_pkg_id::text, 1, 8), 'Umrah Reguler', 30000000, CURRENT_DATE + 30, CURRENT_DATE + 42, 12, 45);
 
     -- Insert Jamaah A (profile_id dibiarkan NULL karena nullable dan independen dari auth.users)
     INSERT INTO public.jamaah (id, profile_id, nik, birth_date, gender, address, phone, package_id, status)
-    VALUES (v_dummy_jamaah_a, NULL, '3171000000000001', '1990-01-01', 'Laki-laki', 'Jl. Test Staging No. 1', '081200000001', v_dummy_pkg_id, 'Pendaftaran');
+    VALUES (v_dummy_jamaah_a, NULL, v_nik_a, '1990-01-01', 'Laki-laki', 'Jl. Test Staging No. 1', v_phone_a, v_dummy_pkg_id, 'Pendaftaran');
 
     -- Insert Jamaah B (profile_id dibiarkan NULL)
     INSERT INTO public.jamaah (id, profile_id, nik, birth_date, gender, address, phone, package_id, status)
-    VALUES (v_dummy_jamaah_b, NULL, '3171000000000002', '1992-02-02', 'Perempuan', 'Jl. Test Staging No. 2', '081200000002', v_dummy_pkg_id, 'Pendaftaran');
+    VALUES (v_dummy_jamaah_b, NULL, v_nik_b, '1992-02-02', 'Perempuan', 'Jl. Test Staging No. 2', v_phone_b, v_dummy_pkg_id, 'Pendaftaran');
 
     -- Insert Termin A (Target Rp 1.000.000)
     INSERT INTO public.installment_terms (id, jamaah_id, term_number, title, amount, due_date)
@@ -57,7 +63,7 @@ BEGIN
     INSERT INTO public.installment_terms (id, jamaah_id, term_number, title, amount, due_date)
     VALUES (v_dummy_term_b, v_dummy_jamaah_b, 1, 'Termin 1 Jamaah B', 2000000, CURRENT_DATE + 14);
 
-    RAISE NOTICE '[OK] Data dummy isolasi berhasil disiapkan (tanpa foreign key auth.users).';
+    RAISE NOTICE '[OK] Data dummy isolasi berhasil disiapkan tanpa benturan data staging.';
 
     -- ------------------------------------------------------------------------
     -- SKENARIO 1: INSERT transfer pending valid (Termin Rp 1.000.000, bayar Rp 400.000)

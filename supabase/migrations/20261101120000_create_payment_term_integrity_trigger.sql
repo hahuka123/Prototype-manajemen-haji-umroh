@@ -82,8 +82,8 @@ BEGIN
     -- dengan mengecualikan baris transaksi yang sedang diperbarui (pada operasi UPDATE)
     -- agar nominal transaksi tidak dihitung dua kali
     SELECT 
-        pg_catalog.COALESCE(pg_catalog.SUM(p.amount) FILTER (WHERE p.status = 'verified'), 0),
-        pg_catalog.COALESCE(pg_catalog.SUM(p.amount) FILTER (WHERE p.status = 'pending'), 0)
+        COALESCE(pg_catalog.SUM(p.amount) FILTER (WHERE p.status = 'verified'), 0),
+        COALESCE(pg_catalog.SUM(p.amount) FILTER (WHERE p.status = 'pending'), 0)
     INTO v_existing_verified, v_existing_pending
     FROM public.payments p
     WHERE p.installment_term_id = NEW.installment_term_id
@@ -94,7 +94,7 @@ BEGIN
         -- Pembayaran terverifikasi (tunai kasir atau approval admin) tidak boleh membuat total alokasi
         -- (existing verified + pending lain + NEW.amount) melampaui target termin
         IF (v_existing_verified + v_existing_pending + NEW.amount) > v_target_amount THEN
-            v_available_quota := pg_catalog.GREATEST(0, v_target_amount - (v_existing_verified + v_existing_pending));
+            v_available_quota := GREATEST(0, v_target_amount - (v_existing_verified + v_existing_pending));
             RAISE EXCEPTION 'Pembayaran terverifikasi melebihi target termin. Sisa kuota yang tersedia: Rp %.',
                 pg_catalog.to_char(v_available_quota, 'FM999,999,999,999');
         END IF;
@@ -103,7 +103,7 @@ BEGIN
         -- Pengajuan transfer pending tidak boleh membuat total komitmen (verified + pending) > target
         -- Mencegah over-allocation saat dua pengajuan dilakukan bersamaan
         IF (v_existing_verified + v_existing_pending + NEW.amount) > v_target_amount THEN
-            v_available_quota := pg_catalog.GREATEST(0, v_target_amount - (v_existing_verified + v_existing_pending));
+            v_available_quota := GREATEST(0, v_target_amount - (v_existing_verified + v_existing_pending));
             RAISE EXCEPTION 'Pengajuan pembayaran melebihi target termin. Sisa kuota yang tersedia: Rp %.',
                 pg_catalog.to_char(v_available_quota, 'FM999,999,999,999');
         END IF;
