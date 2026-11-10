@@ -1,0 +1,3 @@
+# Folder penyimpanan sementara ekspor CSV Supabase Staging
+# File *.csv di folder ini otomatis diabaikan oleh .gitignore
+
