@@ -16,11 +16,12 @@ export default function JamaahAjukanPembayaran() {
 
   const [sisaTagihan, setSisaTagihan] = useState(0);
   const [jamaah, setJamaah] = useState(null);
+  const [terms, setTerms] = useState([]);
   const [selectedTerm, setSelectedTerm] = useState(null);
   const [termId, setTermId] = useState(paramTermId || null);
   const [loading, setLoading] = useState(true);
 
-  const [paymentType, setPaymentType] = useState(paramNominal || paramTermId ? 'installment' : 'installment'); // 'full' | 'installment'
+  const [paymentType, setPaymentType] = useState('installment'); // 'full' | 'installment'
   const [amount, setAmount] = useState('');
   const [bankName, setBankName] = useState('Bank Syariah Indonesia (BSI)');
   const [refNumber, setRefNumber] = useState('');
@@ -44,10 +45,22 @@ export default function JamaahAjukanPembayaran() {
           const sisa = Number(j.sisa_tagihan || 0);
           setSisaTagihan(sisa);
 
+          // Ambil daftar termin resmi milik jamaah yang login
+          let tList = [];
+          try {
+            tList = await installmentService.getTermsByJamaah(j.id);
+            setTerms(tList || []);
+          } catch (tListErr) {
+            console.warn('[AjukanPembayaran] Gagal memuat daftar termin:', tListErr);
+          }
+
           if (paramTermId) {
             setPaymentType('installment');
             try {
-              const t = await installmentService.getTermById(paramTermId);
+              let t = (tList || []).find(item => (item.id === paramTermId || item.term_id === paramTermId));
+              if (!t) {
+                t = await installmentService.getTermById(paramTermId);
+              }
               if (t) {
                 if (t.jamaah_id !== j.id) {
                   setErrorMsg('Termin cicilan tidak sesuai dengan data akun Anda.');
@@ -75,9 +88,32 @@ export default function JamaahAjukanPembayaran() {
             setAmount(String(targetNom));
             if (paramTermin) {
               setNotes(`Pembayaran Termin #${paramTermin}`);
+              const matchingTerm = (tList || []).find(item => Number(item.term_number) === Number(paramTermin));
+              if (matchingTerm && matchingTerm.jamaah_id === j.id) {
+                setSelectedTerm(matchingTerm);
+                setTermId(matchingTerm.id || matchingTerm.term_id);
+              }
             }
           } else {
-            setAmount(String(sisa));
+            // Pengajuan cicilan umum: pilih otomatis termin aktif pertama yang belum lunas
+            setPaymentType('installment');
+            const unpaidTerm = (tList || []).find(item => item.status !== 'paid' && Number(item.remaining_amount || 0) > 0);
+            if (unpaidTerm) {
+              setSelectedTerm(unpaidTerm);
+              setTermId(unpaidTerm.id || unpaidTerm.term_id);
+              const effectiveRemaining = Math.max(
+                0,
+                Number(unpaidTerm.target_amount || 0) - (Number(unpaidTerm.verified_amount || 0) + Number(unpaidTerm.pending_amount || 0))
+              );
+              const remaining = Number(unpaidTerm.remaining_amount || 0);
+              const targetNom = Math.min(effectiveRemaining > 0 ? effectiveRemaining : remaining, sisa);
+              setAmount(String(targetNom));
+              setNotes(`Pembayaran Termin #${unpaidTerm.term_number}: ${unpaidTerm.title}`);
+            } else {
+              setTermId(null);
+              setSelectedTerm(null);
+              setAmount(String(sisa));
+            }
           }
         }
       } catch (err) {
@@ -96,10 +132,61 @@ export default function JamaahAjukanPembayaran() {
     if (type === 'full') {
       setAmount(String(sisaTagihan));
       setTermId(null);
-    } else if (selectedTerm) {
-      setTermId(selectedTerm.id || selectedTerm.term_id);
-      const remaining = Number(selectedTerm.remaining_amount || 0);
-      setAmount(String(Math.min(remaining, sisaTagihan)));
+    } else {
+      if (selectedTerm) {
+        setTermId(selectedTerm.id || selectedTerm.term_id);
+        const effectiveRemaining = Math.max(
+          0,
+          Number(selectedTerm.target_amount || 0) - (Number(selectedTerm.verified_amount || 0) + Number(selectedTerm.pending_amount || 0))
+        );
+        const remaining = Number(selectedTerm.remaining_amount || 0);
+        setAmount(String(Math.min(effectiveRemaining > 0 ? effectiveRemaining : remaining, sisaTagihan)));
+        if (!notes) {
+          setNotes(`Pembayaran Termin #${selectedTerm.term_number}: ${selectedTerm.title}`);
+        }
+      } else {
+        const unpaidTerm = (terms || []).find(item => item.status !== 'paid' && Number(item.remaining_amount || 0) > 0);
+        if (unpaidTerm) {
+          setSelectedTerm(unpaidTerm);
+          setTermId(unpaidTerm.id || unpaidTerm.term_id);
+          const effectiveRemaining = Math.max(
+            0,
+            Number(unpaidTerm.target_amount || 0) - (Number(unpaidTerm.verified_amount || 0) + Number(unpaidTerm.pending_amount || 0))
+          );
+          const remaining = Number(unpaidTerm.remaining_amount || 0);
+          setAmount(String(Math.min(effectiveRemaining > 0 ? effectiveRemaining : remaining, sisaTagihan)));
+          setNotes(`Pembayaran Termin #${unpaidTerm.term_number}: ${unpaidTerm.title}`);
+        } else {
+          setAmount(String(sisaTagihan));
+        }
+      }
+    }
+  }
+
+  function handleTermSelectChange(e) {
+    const chosenId = e.target.value;
+    setErrorMsg('');
+    if (!chosenId) {
+      setTermId(null);
+      setSelectedTerm(null);
+      return;
+    }
+    const found = terms.find(t => (t.id === chosenId || t.term_id === chosenId));
+    if (found) {
+      if (found.jamaah_id !== jamaah.id) {
+        setErrorMsg('Termin cicilan tidak sesuai dengan data akun Anda.');
+        return;
+      }
+      setSelectedTerm(found);
+      setTermId(found.id || found.term_id);
+      const effectiveRemaining = Math.max(
+        0,
+        Number(found.target_amount || 0) - (Number(found.verified_amount || 0) + Number(found.pending_amount || 0))
+      );
+      const remaining = Number(found.remaining_amount || 0);
+      const targetNom = Math.min(effectiveRemaining > 0 ? effectiveRemaining : remaining, sisaTagihan);
+      setAmount(String(targetNom));
+      setNotes(`Pembayaran Termin #${found.term_number}: ${found.title}`);
     }
   }
 
@@ -128,14 +215,48 @@ export default function JamaahAjukanPembayaran() {
     if (submitting) return; // Mencegah double submit
     const num = Number(amount);
 
-    if (paymentType === 'full' && num !== Number(sisaTagihan)) {
-      setErrorMsg('Bayar penuh harus sama dengan sisa tagihan.');
+    if (isNaN(num) || num <= 0) {
+      setErrorMsg('Nominal pembayaran harus lebih besar dari Rp 0.');
       return;
     }
 
-    if (num <= 0 || num > Number(sisaTagihan)) {
-      setErrorMsg(`Nominal pembayaran tidak valid. Sisa tagihan: Rp ${Number(sisaTagihan).toLocaleString('id-ID')}`);
-      return;
+    if (paymentType === 'full') {
+      if (num !== Number(sisaTagihan)) {
+        setErrorMsg(`Bayar penuh harus sama persis dengan sisa tagihan (Rp ${Number(sisaTagihan).toLocaleString('id-ID')}).`);
+        return;
+      }
+    } else {
+      // paymentType === 'installment'
+      if (num > Number(sisaTagihan)) {
+        setErrorMsg(`Nominal pembayaran (Rp ${num.toLocaleString('id-ID')}) melebihi sisa tagihan paket (Rp ${Number(sisaTagihan).toLocaleString('id-ID')}).`);
+        return;
+      }
+
+      if (termId && selectedTerm) {
+        // Validasi terhadap sisa kewajiban termin via helper
+        const termValidation = installmentService.validatePaymentAgainstTerm({
+          term: selectedTerm,
+          paymentAmount: num
+        });
+        if (!termValidation.isValid) {
+          setErrorMsg(termValidation.error);
+          return;
+        }
+
+        // Validasi kuota efektif (memperhitungkan pending_amount)
+        const target = Number(selectedTerm.target_amount || selectedTerm.amount || 0);
+        const verified = Number(selectedTerm.verified_amount || 0);
+        const pending = Number(selectedTerm.pending_amount || 0);
+        const effectiveRemaining = Math.max(0, target - (verified + pending));
+
+        if (num > effectiveRemaining) {
+          setErrorMsg(
+            `Nominal pembayaran (Rp ${num.toLocaleString('id-ID')}) melebihi sisa kuota termin ` +
+            `(Sisa kuota tersedia setelah memperhitungkan verifikasi tertunda: Rp ${effectiveRemaining.toLocaleString('id-ID')}).`
+          );
+          return;
+        }
+      }
     }
 
     if (!proofFile) {
@@ -219,48 +340,6 @@ export default function JamaahAjukanPembayaran() {
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            {selectedTerm ? (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '12px 14px',
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                borderRadius: 'var(--radius-md)',
-                color: '#1e40af',
-                fontSize: '0.85rem',
-                marginBottom: '18px'
-              }}>
-                <Info size={18} />
-                <div>
-                  <div>Alokasi: <strong>Termin #{selectedTerm.term_number}: {selectedTerm.title}</strong></div>
-                  <div style={{ fontSize: '0.78rem', marginTop: '2px', color: '#1d4ed8' }}>
-                    Target: Rp {Number(selectedTerm.target_amount).toLocaleString('id-ID')} • Sisa Termin: Rp {Number(selectedTerm.remaining_amount).toLocaleString('id-ID')}
-                    {Number(selectedTerm.pending_amount || 0) > 0 && ` (Ada Rp ${Number(selectedTerm.pending_amount).toLocaleString('id-ID')} menunggu verifikasi)`}
-                  </div>
-                </div>
-              </div>
-            ) : paramTermin ? (
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '12px 14px',
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                borderRadius: 'var(--radius-md)',
-                color: '#1e40af',
-                fontSize: '0.85rem',
-                marginBottom: '18px'
-              }}>
-                <Info size={18} />
-                <span>
-                  Pengajuan ini disesuaikan untuk pembayaran <strong>Termin #{paramTermin}</strong>. Nominal otomatis diisi sesuai sisa kewajiban termin Anda.
-                </span>
-              </div>
-            ) : null}
-
             {errorMsg && (
               <div style={{
                 display: 'flex',
@@ -290,7 +369,7 @@ export default function JamaahAjukanPembayaran() {
                     checked={paymentType === 'installment'}
                     onChange={() => handleTypeChange('installment')}
                   />
-                  <span>Cicilan (Sebagian dari sisa tagihan)</span>
+                  <span>Cicilan (Bertahap / Per Termin)</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.92rem' }}>
@@ -304,6 +383,94 @@ export default function JamaahAjukanPembayaran() {
                 </label>
               </div>
             </div>
+
+            {/* Pemilihan Termin Cicilan (Khusus Jenis Cicilan) */}
+            {paymentType === 'installment' && (
+              <div className="form-group" style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', marginBottom: '20px' }}>
+                {terms.length === 0 ? (
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', color: '#64748b', fontSize: '0.85rem' }}>
+                    <Info size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+                    <div>
+                      <strong>Belum Ada Jadwal Termin Cicilan Aktif</strong>
+                      <div style={{ marginTop: '2px', lineHeight: 1.5 }}>
+                        Pihak biro travel belum menetapkan rencana jadwal termin untuk akun Anda. Anda tetap dapat melanjutkan pembayaran cicilan umum (tanpa pengikatan termin) sesuai nominal yang ditransfer.
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <label className="form-label" htmlFor="select-term" style={{ marginBottom: '6px' }}>
+                      Alokasi Termin Cicilan
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 400 }}>
+                        (Pilih termin yang akan dibayarkan)
+                      </span>
+                    </label>
+                    <select
+                      id="select-term"
+                      className="form-select"
+                      value={termId || ''}
+                      onChange={handleTermSelectChange}
+                    >
+                      <option value="">-- Tanpa Termin (Cicilan Bebas) --</option>
+                      {terms.map((t) => {
+                        const targetNom = Number(t.target_amount ?? t.amount ?? 0);
+                        const verifiedNom = Number(t.verified_amount ?? 0);
+                        const remainingNom = Number(t.remaining_amount ?? Math.max(0, targetNom - verifiedNom));
+                        const isPaid = t.status === 'paid' || remainingNom <= 0;
+                        const dueDateStr = t.due_date ? new Date(t.due_date).toLocaleDateString('id-ID', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : '-';
+
+                        return (
+                          <option
+                            key={t.id || t.term_id}
+                            value={t.id || t.term_id}
+                            disabled={isPaid}
+                          >
+                            Termin #{t.term_number}: {t.title} — {isPaid ? '[LUNAS]' : `Sisa Rp ${remainingNom.toLocaleString('id-ID')}`} (Jatuh tempo: {dueDateStr})
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    {selectedTerm ? (
+                      <div style={{
+                        marginTop: '12px',
+                        padding: '12px 14px',
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: '0.83rem',
+                        color: '#1e40af'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <div>
+                            <strong>Termin #{selectedTerm.term_number}: {selectedTerm.title}</strong>
+                          </div>
+                          <span className="status-badge" style={{ fontSize: '0.72rem', background: '#dbeafe', color: '#1e40af' }}>
+                            Jatuh tempo: {selectedTerm.due_date ? new Date(selectedTerm.due_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px', marginTop: '6px', fontSize: '0.78rem' }}>
+                          <div>Target: <strong>Rp {Number(selectedTerm.target_amount ?? selectedTerm.amount ?? 0).toLocaleString('id-ID')}</strong></div>
+                          <div>Terbayar Sah: <strong style={{ color: '#047857' }}>Rp {Number(selectedTerm.verified_amount || 0).toLocaleString('id-ID')}</strong></div>
+                          <div>Sisa Kewajiban: <strong style={{ color: '#b91c1c' }}>Rp {Number(selectedTerm.remaining_amount || 0).toLocaleString('id-ID')}</strong></div>
+                          {Number(selectedTerm.pending_amount || 0) > 0 && (
+                            <div style={{ color: '#d97706' }}>Menunggu Verifikasi: <strong>Rp {Number(selectedTerm.pending_amount).toLocaleString('id-ID')}</strong></div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: '8px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Pilih termin di atas untuk menyelaraskan histori pembayaran dengan target jatuh tempo.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Nominal Pembayaran */}
             <div className="form-group">

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
+    "dev:staging": "node ./node_modules/vite/bin/vite.js --mode staging",
     "build": "node ./node_modules/vite/bin/vite.js build",
+    "build:staging": "node ./node_modules/vite/bin/vite.js build --mode staging",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "test": "node --env-file=.env --test"
   },

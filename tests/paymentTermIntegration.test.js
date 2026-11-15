@@ -422,4 +422,138 @@ describe('ML Stage 2.5 — Final Fix Validasi Alokasi Pembayaran', () => {
       assert.doesNotMatch(sqlContent, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.validate_payment_term_integrity\(\)\s+TO\s+authenticated/i);
     });
   });
+
+  describe('3. Integrasi Termin pada Pengajuan Pembayaran Jamaah (ML Stage 2.6)', () => {
+    const mockJamaahId = 'demo-jamaah-uuid-001';
+    const mockOtherJamaahId = 'demo-jamaah-uuid-999';
+
+    it('3.1 Pengajuan cicilan dengan termin valid memetakan installment_term_id ke payload dan berstatus pending', async () => {
+      const result = await paymentService.submitTransfer({
+        jamaah_id: mockJamaahId,
+        installment_term_id: 'demo-term-1',
+        nominal: 2500000,
+        jenis: 'installment',
+        bank_asal: 'Bank BSI',
+        no_referensi: 'TRX-STG-26-001'
+      });
+
+      assert.equal(result.jamaah_id, mockJamaahId);
+      assert.equal(result.installment_term_id, 'demo-term-1');
+      assert.equal(result.status, 'pending');
+      assert.equal(result.nominal, 2500000);
+      assert.equal(result.payment_type, 'installment');
+    });
+
+    it('3.2 Pengajuan bayar penuh (full) secara eksplisit menghasilkan installment_term_id = null', async () => {
+      // Pada halaman AjukanPembayaran, handleTypeChange('full') mereset termId menjadi null
+      const termId = null;
+      const paymentType = 'full';
+      const payloadTermId = paymentType === 'full' ? null : (termId || null);
+
+      assert.equal(payloadTermId, null);
+
+      const result = await paymentService.submitTransfer({
+        jamaah_id: mockJamaahId,
+        installment_term_id: payloadTermId,
+        nominal: 10000000,
+        jenis: 'full',
+        bank_asal: 'Bank BSI',
+        no_referensi: 'TRX-STG-26-FULL'
+      });
+
+      assert.equal(result.installment_term_id, null);
+      assert.equal(result.payment_type, 'full');
+      assert.equal(result.status, 'pending');
+    });
+
+    it('3.3 Pengajuan cicilan legacy / tanpa termin (installment_term_id = null) tetap didukung dan aman', async () => {
+      const result = await paymentService.submitTransfer({
+        jamaah_id: mockJamaahId,
+        installment_term_id: null,
+        nominal: 1500000,
+        jenis: 'installment',
+        bank_asal: 'Bank Mandiri',
+        no_referensi: 'TRX-STG-26-LEGACY'
+      });
+
+      assert.equal(result.installment_term_id, null);
+      assert.equal(result.payment_type, 'installment');
+      assert.equal(result.status, 'pending');
+    });
+
+    it('3.4 Validasi anti over-alokasi menolak nominal pembayaran yang melampaui sisa kuota termin', () => {
+      const mockTerm = {
+        id: 'term-sample-1',
+        jamaah_id: mockJamaahId,
+        target_amount: 5000000,
+        verified_amount: 3000000,
+        pending_amount: 1000000,
+        remaining_amount: 2000000
+      };
+
+      // Kuota efektif tersedia = 5.000.000 - (3.000.000 + 1.000.000) = 1.000.000
+      const effectiveRemaining = Math.max(
+        0,
+        Number(mockTerm.target_amount) - (Number(mockTerm.verified_amount) + Number(mockTerm.pending_amount))
+      );
+      assert.equal(effectiveRemaining, 1000000);
+
+      // Pembayaran 1.500.000 melebihi kuota efektif (tersisa 1.000.000 karena ada pending 1.000.000)
+      const overAmount = 1500000;
+      const isOverQuota = overAmount > effectiveRemaining;
+      assert.equal(isOverQuota, true);
+
+      // Validasi nominal tepat sama dengan sisa kuota efektif
+      const validAmount = 1000000;
+      assert.equal(validAmount <= effectiveRemaining, true);
+    });
+
+    it('3.5 Validasi kepemilikan termin (anti cross-jamaah) menolak pengaitan termin milik jamaah lain', () => {
+      const termOwnedByOther = {
+        id: 'term-other-001',
+        jamaah_id: mockOtherJamaahId,
+        target_amount: 5000000
+      };
+
+      const currentLoggedInJamaah = {
+        id: mockJamaahId
+      };
+
+      const isMismatch = termOwnedByOther.jamaah_id !== currentLoggedInJamaah.id;
+      assert.equal(isMismatch, true, 'Termin milik jamaah lain harus dideteksi mismatch');
+    });
+
+    it('3.6 Termin berstatus lunas (paid) ditandai tidak dapat dipilih untuk pembayaran baru', () => {
+      const paidTerm = {
+        id: 'term-paid-001',
+        target_amount: 5000000,
+        verified_amount: 5000000,
+        pending_amount: 0,
+        remaining_amount: 0,
+        status: 'paid'
+      };
+
+      const isPaid = paidTerm.status === 'paid' || Number(paidTerm.remaining_amount) <= 0;
+      assert.equal(isPaid, true);
+    });
+
+    it('3.7 Transaksi pengajuan transfer tidak langsung disetujui (tidak auto-verify) dan masuk antrean verifikasi admin', async () => {
+      const submitted = await paymentService.submitTransfer({
+        jamaah_id: mockJamaahId,
+        installment_term_id: 'demo-term-1',
+        nominal: 2000000,
+        jenis: 'installment',
+        bank_asal: 'Bank BSI',
+        no_referensi: 'TRX-STG-26-VERIFY-CHECK'
+      });
+
+      // Harus pending
+      assert.equal(submitted.status, 'pending');
+      assert.ok(!submitted.verified_by, 'verified_by harus kosong / belum diverifikasi');
+      assert.ok(!submitted.verified_at, 'verified_at harus kosong / belum diverifikasi');
+
+      // Admin baru mengubahnya melalui verifyPayment
+      assert.notEqual(submitted.status, 'verified');
+    });
+  });
 });

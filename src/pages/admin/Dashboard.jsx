@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import StatCard from '../../components/StatCard';
-import { Users, FileCheck, CheckCircle, Clock, Calendar, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Users, FileCheck, CheckCircle, Clock, Calendar, AlertTriangle, AlertCircle, TrendingUp, Info, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { jamaahService } from '../../services/jamaahService';
 import { documentService } from '../../services/documentService';
 import { paymentService } from '../../services/paymentService';
 import { scheduleService } from '../../services/scheduleService';
 import { packageService } from '../../services/packageService';
+import { mlService } from '../../services/mlService';
 
 export default function AdminDashboard() {
   const [metrics, setMetrics] = useState({
@@ -23,20 +24,30 @@ export default function AdminDashboard() {
   const [paketMap, setPaketMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [mlStatus, setMlStatus] = useState({
+    isReady: false,
+    message: 'Model prediksi belum tersedia. Sistem menunggu dataset pembayaran yang memadai.'
+  });
+  const [riskPredictions, setRiskPredictions] = useState([]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         setLoadError('');
-        const [jamaahList, pendingDocs, pendingPays, schedules, pkgs] = await Promise.all([
+        const [jamaahList, pendingDocs, pendingPays, schedules, pkgs, modelStat, predictions] = await Promise.all([
           jamaahService.getJamaah(),
           documentService.getPendingVerifications(),
           paymentService.getPendingTransfers(),
           scheduleService.getSchedules(),
-          packageService.getPackages()
+          packageService.getPackages(),
+          mlService.getModelStatus(),
+          mlService.getRiskPredictions()
         ]);
         
+        setMlStatus(modelStat);
+        setRiskPredictions(predictions || []);
+
         const pMap = {};
         (pkgs || []).forEach(p => {
           pMap[p.id] = p.name || p.nama;
@@ -184,6 +195,113 @@ export default function AdminDashboard() {
             Lihat Detail Jadwal
           </Link>
         </div>
+      </div>
+
+      {/* Bagian Prediksi Risiko Keterlambatan Cicilan (Machine Learning) */}
+      <div className="card" style={{ marginBottom: '28px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <TrendingUp size={20} className="text-primary" />
+              Prediksi Risiko Keterlambatan Cicilan (ML Baseline)
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Alat bantu analisis Admin berbasis algoritma Logistic Regression untuk mendeteksi potensi termin terlambat bayar.
+            </p>
+          </div>
+          {mlStatus.isReady && mlStatus.model && (
+            <span className="status-badge verified" style={{ fontSize: '0.75rem' }}>
+              Model: {mlStatus.model.version || 'v1.0.0'} (Aktif)
+            </span>
+          )}
+        </div>
+
+        {/* Disclaimer Operasional Wajib */}
+        <div style={{
+          padding: '10px 14px',
+          backgroundColor: 'var(--surface-color, #f8fafc)',
+          borderRadius: 'var(--radius-md, 8px)',
+          border: '1px solid var(--border-color, #e2e8f0)',
+          fontSize: '0.8rem',
+          color: 'var(--text-muted)',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <Info size={16} style={{ flexShrink: 0 }} />
+          <span>
+            <strong>Disclaimer:</strong> Prediksi ini hanya berfungsi sebagai alat bantu pengawasan internal Admin. Sistem <strong>tidak akan otomatis</strong> menolak pembayaran, mengubah status pembayaran, atau mengambil tindakan apa pun terhadap jamaah.
+          </span>
+        </div>
+
+        {!mlStatus.isReady || riskPredictions.length === 0 ? (
+          <div style={{
+            padding: '28px 20px',
+            textAlign: 'center',
+            backgroundColor: '#f8fafc',
+            border: '1px dashed #cbd5e1',
+            borderRadius: '8px',
+            color: 'var(--text-muted)'
+          }}>
+            <BrainCircuit size={36} style={{ margin: '0 auto 10px', color: '#94a3b8' }} />
+            <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+              {mlStatus.message || 'Model prediksi belum tersedia. Sistem menunggu dataset pembayaran yang memadai.'}
+            </div>
+            <p style={{ fontSize: '0.82rem', margin: 0 }}>
+              Sistem membutuhkan data historis pelunasan termin yang mencukupi untuk melakukan pelatihan model secara valid tanpa manipulasi skor.
+            </p>
+          </div>
+        ) : (
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Nama Jamaah</th>
+                  <th>Paket Perjalanan</th>
+                  <th>Termin Cicilan</th>
+                  <th>Jatuh Tempo</th>
+                  <th style={{ textAlign: 'center' }}>Tingkat Risiko</th>
+                  <th style={{ textAlign: 'right' }}>Skor Probabilitas</th>
+                  <th>Versi Model</th>
+                  <th>Waktu Prediksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {riskPredictions.map(p => {
+                  const getRiskBadge = (level) => {
+                    if (level === 'HIGH') return <span className="status-badge rejected">Tinggi</span>;
+                    if (level === 'MEDIUM') return <span className="status-badge pending">Sedang</span>;
+                    return <span className="status-badge verified">Rendah</span>;
+                  };
+
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ fontWeight: 600 }}>{p.jamaah?.full_name || 'Jamaah'}</td>
+                      <td>{paketMap[p.jamaah?.paket_id] || '-'}</td>
+                      <td>{p.term?.title || `Termin #${p.term?.term_number || '-'}`}</td>
+                      <td>
+                        {p.term?.due_date ? new Date(p.term.due_date).toLocaleDateString('id-ID', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        }) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>{getRiskBadge(p.risk_level)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                        {(Number(p.risk_score || 0) * 100).toFixed(1)}%
+                      </td>
+                      <td><code>{p.model_version || '-'}</code></td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        {p.predicted_at ? new Date(p.predicted_at).toLocaleString('id-ID') : '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Tabel Ringkasan Cepat */}
